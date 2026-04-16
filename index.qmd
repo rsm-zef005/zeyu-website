@@ -1,0 +1,31 @@
+---
+title: "Home"
+---
+
+# Zeyu Fang
+
+Master of Business Analytics student at UC San Diego with interests in marketing analytics, experimentation, market research, and data-driven decision making.
+
+## Education
+
+- **University of California San Diego** — Master in Business Analytics, expected Nov. 2026
+- **Shanghai Jiao Tong University** — Bachelor of Economics in Finance, Minor in Business Data Science
+
+## Experience
+
+- **KPMG** — Insurance Advisory Intern
+- **CITIC Securities** — Business Analysis Intern
+- **Guotai Junan Asset Management** — Real Estate Investment Group Intern
+- **Soochow Securities** — Industry Research Intern
+
+## Focus Areas
+
+- Marketing analytics
+- A/B testing and experimentation
+- Statistical inference
+- Data analysis and visualization
+- Market and industry research
+
+## This Site
+
+Use the navigation bar above to learn more about my background, view my resume, and read my coursework and posts.

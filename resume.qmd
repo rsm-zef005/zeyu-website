@@ -1,0 +1,67 @@
+---
+title: "Resume"
+---
+
+## Education
+
+**University of California San Diego (UCSD)**  
+Master in Business Analytics, Expected Nov. 2026
+
+**Shanghai Jiao Tong University (SJTU)**  
+Bachelor of Economics in Finance  
+Minor in Business Data Science
+
+## Experience
+
+**KPMG — Insurance Advisory Intern**  
+Jul. 2024 – Jan. 2025
+
+- Supported an IFRS 17 finance implementation project
+- Built working papers for COA design, journal entry mapping, and disclosure mapping
+- Processed and reconciled datasets in Excel to support impact analysis and client presentations
+
+**CITIC Securities — Business Analysis Intern**  
+Apr. 2024 – Jun. 2024
+
+- Researched China’s coffee market, including competition, industry trends, and value chain structure
+- Built a market analysis database using industry data and company information
+- Conducted survey analysis and created data visualizations for market insights
+
+**Guotai Junan Asset Management — Real Estate Investment Group Intern**  
+Jan. 2024 – Apr. 2024
+
+- Assisted with ABS and REITs project materials and filings
+- Supported financial data analysis, cash flow forecasting, and fund structuring
+- Conducted industry research and contributed to work drafts and reports
+
+**Soochow Securities — Industry Research Intern**  
+Jul. 2023 – Oct. 2023
+
+- Conducted financial analysis of listed companies
+- Organized and benchmarked company data using Wind and Excel
+- Prepared meeting notes and tracked market developments
+
+## Projects
+
+**The 9th “INTERNET+” Competition — Bronze Award**
+
+- Conducted market research and data analysis
+- Developed SWOT analysis to help refine project direction
+
+**Bain Cup Consulting Case Competition**
+
+- Analyzed the sugar-free beverage market
+- Designed questionnaires and contributed to presentation materials on growth strategy
+
+## Skills
+
+- Python
+- SQL
+- Excel
+- NumPy
+- Pandas
+- SciPy
+- Matplotlib
+- Data visualization
+- Market research
+- Financial analysis

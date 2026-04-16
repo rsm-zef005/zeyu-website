@@ -1,0 +1,114 @@
+[
+  {
+    "objectID": "posts.html",
+    "href": "posts.html",
+    "title": "Posts",
+    "section": "",
+    "text": "No matching items"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Home",
+    "section": "",
+    "text": "Master of Business Analytics student at UC San Diego with interests in marketing analytics, experimentation, market research, and data-driven decision making.\n\n\n\nUniversity of California San Diego — Master in Business Analytics, expected Nov. 2026\nShanghai Jiao Tong University — Bachelor of Economics in Finance, Minor in Business Data Science\n\n\n\n\n\nKPMG — Insurance Advisory Intern\nCITIC Securities — Business Analysis Intern\nGuotai Junan Asset Management — Real Estate Investment Group Intern\nSoochow Securities — Industry Research Intern\n\n\n\n\n\nMarketing analytics\nA/B testing and experimentation\nStatistical inference\nData analysis and visualization\nMarket and industry research\n\n\n\n\nUse the navigation bar above to learn more about my background, view my resume, and read my coursework and posts."
+  },
+  {
+    "objectID": "index.html#education",
+    "href": "index.html#education",
+    "title": "Home",
+    "section": "",
+    "text": "University of California San Diego — Master in Business Analytics, expected Nov. 2026\nShanghai Jiao Tong University — Bachelor of Economics in Finance, Minor in Business Data Science"
+  },
+  {
+    "objectID": "index.html#experience",
+    "href": "index.html#experience",
+    "title": "Home",
+    "section": "",
+    "text": "KPMG — Insurance Advisory Intern\nCITIC Securities — Business Analysis Intern\nGuotai Junan Asset Management — Real Estate Investment Group Intern\nSoochow Securities — Industry Research Intern"
+  },
+  {
+    "objectID": "index.html#focus-areas",
+    "href": "index.html#focus-areas",
+    "title": "Home",
+    "section": "",
+    "text": "Marketing analytics\nA/B testing and experimentation\nStatistical inference\nData analysis and visualization\nMarket and industry research"
+  },
+  {
+    "objectID": "index.html#this-site",
+    "href": "index.html#this-site",
+    "title": "Home",
+    "section": "",
+    "text": "Use the navigation bar above to learn more about my background, view my resume, and read my coursework and posts."
+  },
+  {
+    "objectID": "resume.html",
+    "href": "resume.html",
+    "title": "Resume",
+    "section": "",
+    "text": "University of California San Diego (UCSD)\nMaster in Business Analytics, Expected Nov. 2026\nShanghai Jiao Tong University (SJTU)\nBachelor of Economics in Finance\nMinor in Business Data Science"
+  },
+  {
+    "objectID": "resume.html#education",
+    "href": "resume.html#education",
+    "title": "Resume",
+    "section": "",
+    "text": "University of California San Diego (UCSD)\nMaster in Business Analytics, Expected Nov. 2026\nShanghai Jiao Tong University (SJTU)\nBachelor of Economics in Finance\nMinor in Business Data Science"
+  },
+  {
+    "objectID": "resume.html#experience",
+    "href": "resume.html#experience",
+    "title": "Resume",
+    "section": "Experience",
+    "text": "Experience\nKPMG — Insurance Advisory Intern\nJul. 2024 – Jan. 2025\n\nSupported an IFRS 17 finance implementation project\nBuilt working papers for COA design, journal entry mapping, and disclosure mapping\nProcessed and reconciled datasets in Excel to support impact analysis and client presentations\n\nCITIC Securities — Business Analysis Intern\nApr. 2024 – Jun. 2024\n\nResearched China’s coffee market, including competition, industry trends, and value chain structure\nBuilt a market analysis database using industry data and company information\nConducted survey analysis and created data visualizations for market insights\n\nGuotai Junan Asset Management — Real Estate Investment Group Intern\nJan. 2024 – Apr. 2024\n\nAssisted with ABS and REITs project materials and filings\nSupported financial data analysis, cash flow forecasting, and fund structuring\nConducted industry research and contributed to work drafts and reports\n\nSoochow Securities — Industry Research Intern\nJul. 2023 – Oct. 2023\n\nConducted financial analysis of listed companies\nOrganized and benchmarked company data using Wind and Excel\nPrepared meeting notes and tracked market developments"
+  },
+  {
+    "objectID": "resume.html#projects",
+    "href": "resume.html#projects",
+    "title": "Resume",
+    "section": "Projects",
+    "text": "Projects\nThe 9th “INTERNET+” Competition — Bronze Award\n\nConducted market research and data analysis\nDeveloped SWOT analysis to help refine project direction\n\nBain Cup Consulting Case Competition\n\nAnalyzed the sugar-free beverage market\nDesigned questionnaires and contributed to presentation materials on growth strategy"
+  },
+  {
+    "objectID": "resume.html#skills",
+    "href": "resume.html#skills",
+    "title": "Resume",
+    "section": "Skills",
+    "text": "Skills\n\nPython\nSQL\nExcel\nNumPy\nPandas\nSciPy\nMatplotlib\nData visualization\nMarket research\nFinancial analysis"
+  },
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "About",
+    "section": "",
+    "text": "I am currently pursuing a Master in Business Analytics at the University of California San Diego. Before UC San Diego, I studied Finance at Shanghai Jiao Tong University and completed a minor in Business Data Science.\nMy academic background has given me training in business analytics, machine learning, optimization, finance, and data analysis. I am especially interested in applying analytical methods to real business problems."
+  },
+  {
+    "objectID": "about.html#background",
+    "href": "about.html#background",
+    "title": "About",
+    "section": "",
+    "text": "I am currently pursuing a Master in Business Analytics at the University of California San Diego. Before UC San Diego, I studied Finance at Shanghai Jiao Tong University and completed a minor in Business Data Science.\nMy academic background has given me training in business analytics, machine learning, optimization, finance, and data analysis. I am especially interested in applying analytical methods to real business problems."
+  },
+  {
+    "objectID": "about.html#professional-interests",
+    "href": "about.html#professional-interests",
+    "title": "About",
+    "section": "Professional Interests",
+    "text": "Professional Interests\nI am interested in marketing analytics, experimentation, market research, and data-driven decision making. Through previous internships, I have worked on projects involving financial analysis, market analysis, reporting, data reconciliation, and industry research."
+  },
+  {
+    "objectID": "about.html#technical-skills",
+    "href": "about.html#technical-skills",
+    "title": "About",
+    "section": "Technical Skills",
+    "text": "Technical Skills\n\nPython\nSQL\nExcel / MS Office\nNumPy\nPandas\nSciPy\nMatplotlib"
+  },
+  {
+    "objectID": "about.html#current-work",
+    "href": "about.html#current-work",
+    "title": "About",
+    "section": "Current Work",
+    "text": "Current Work\nThis website is a place to organize my coursework, projects, and analytical writing for MGTA 495 and related work."
+  }
+]

@@ -1,0 +1,23 @@
+project:
+  type: website
+  output-dir: docs
+
+website:
+  title: "Zeyu Fang"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: about.qmd
+        text: About
+      - href: resume.qmd
+        text: Resume
+      - href: posts.qmd
+        text: Posts
+
+format:
+  html:
+    theme: minty
+    toc: false
+    page-layout: full
+    css: styles.css
