@@ -1,0 +1,291 @@
+---
+title: "HW1: A/B Testing and Simulating Key Ideas in Frequentist Statistical Inference"
+date: 2026-04-15
+categories: [Homework, A/B Testing, Statistics]
+jupyter: python3
+format:
+  html:
+    toc: true
+---
+
+## Introduction
+
+A/B testing is one of the most common ways to evaluate whether a change in website design or copy improves user behavior. In this post, I use a simulated A/B test to study several core ideas in frequentist statistical inference.
+
+The setting is a homepage call-to-action for a newsletter signup. Visitors are randomly assigned to see one of two messages, and each visitor either signs up or does not sign up. This creates a simple but useful example for understanding estimation, uncertainty, hypothesis testing, regression, and the danger of repeatedly checking results before data collection is complete.
+
+## The A/B Test as a Statistical Problem
+
+Let `X_Ai` denote the outcome for user `i` in group A and `X_Bi` denote the outcome for user `i` in group B, where each outcome equals 1 if the user signs up and 0 otherwise. Then each observation can be modeled as a Bernoulli random variable with success probabilities `pi_A` and `pi_B`.
+
+The quantity of interest is the difference in signup rates:
+
+`theta = pi_A - pi_B`
+
+A natural estimator is the difference in sample means:
+
+`theta_hat = Xbar_A - Xbar_B`
+
+If `theta_hat > 0`, version A appears to outperform version B in the sample. However, because the data are random, the observed difference will vary from one experiment to another. The rest of this post explores how frequentist tools help us reason about that variability.
+
+## Simulating Data
+
+To make the analysis concrete, I simulate data from an experiment in which the true signup probability is 0.22 for version A and 0.18 for version B. This implies a true treatment effect of 0.04.
+
+I generate 1,000 observations in each group.
+
+```{python}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+import statsmodels.api as sm
+
+np.random.seed(495)
+
+pi_A = 0.22
+pi_B = 0.18
+n = 1000
+
+A = np.random.binomial(1, pi_A, n)
+B = np.random.binomial(1, pi_B, n)
+
+theta_true = pi_A - pi_B
+theta_hat = A.mean() - B.mean()
+
+summary_table = pd.DataFrame({
+    "Group": ["A", "B"],
+    "True signup rate": [pi_A, pi_B],
+    "Observed signup rate": [A.mean(), B.mean()]
+})
+
+summary_table
+```
+
+The observed difference in sample means is shown below.
+
+```{python}
+theta_hat
+```
+
+Even though the true treatment effect is 0.04, the realized estimate will generally not equal 0.04 exactly. This is the basic motivation for statistical inference: sample estimates fluctuate, even when the underlying data-generating process is fixed.
+
+## The Law of Large Numbers
+
+The law of large numbers says that sample averages tend to get closer to their expected values as the sample size increases. In this context, that means the running estimate of the difference in means should gradually stabilize near the true effect.
+
+To illustrate this, I compute the cumulative average of the observation-level differences `A_i - B_i` as the sample grows.
+
+```{python}
+diffs = A - B
+running_mean = np.cumsum(diffs) / np.arange(1, n + 1)
+
+running_df = pd.DataFrame({
+    "n": np.arange(1, n + 1),
+    "running_mean": running_mean
+})
+
+running_df.head()
+```
+
+```{python}
+#| echo: false
+
+plt.figure(figsize=(8, 5))
+plt.plot(running_df["n"], running_df["running_mean"], linewidth=2)
+plt.axhline(theta_true, linestyle="--", linewidth=2)
+plt.xlabel("Number of paired observations")
+plt.ylabel("Cumulative average of A - B")
+plt.title("Law of Large Numbers for the Difference in Means")
+plt.show()
+```
+
+At small sample sizes, the running average moves around quite a bit. As the sample grows, the estimate becomes more stable and moves closer to the true value of 0.04. This is exactly what the law of large numbers predicts.
+
+## Bootstrap Standard Errors
+
+A point estimate alone is not enough; we also want to know how uncertain that estimate is. One way to quantify uncertainty is with a standard error. In this section, I estimate the standard error of `theta_hat` using the bootstrap.
+
+The bootstrap repeatedly resamples the observed data with replacement, recomputes the estimator in each resample, and uses the variability across bootstrap replications as an estimate of sampling uncertainty.
+
+```{python}
+B_boot = 1000
+boot_estimates = []
+
+for _ in range(B_boot):
+    A_star = np.random.choice(A, size=n, replace=True)
+    B_star = np.random.choice(B, size=n, replace=True)
+    boot_estimates.append(A_star.mean() - B_star.mean())
+
+boot_estimates = np.array(boot_estimates)
+boot_se = boot_estimates.std(ddof=1)
+
+pA_hat = A.mean()
+pB_hat = B.mean()
+
+analytic_se = np.sqrt(
+    pA_hat * (1 - pA_hat) / n +
+    pB_hat * (1 - pB_hat) / n
+)
+
+ci_lower = theta_hat - 1.96 * boot_se
+ci_upper = theta_hat + 1.96 * boot_se
+
+se_table = pd.DataFrame({
+    "Quantity": ["Point estimate", "Bootstrap SE", "Analytical SE", "95% CI lower", "95% CI upper"],
+    "Value": [theta_hat, boot_se, analytic_se, ci_lower, ci_upper]
+})
+
+se_table
+```
+
+```{python}
+#| echo: false
+
+plt.figure(figsize=(8, 5))
+plt.hist(boot_estimates, bins=30, edgecolor="black")
+plt.axvline(theta_hat, linestyle="--", linewidth=2)
+plt.xlabel("Bootstrap estimate")
+plt.ylabel("Frequency")
+plt.title("Bootstrap Distribution of the Difference in Means")
+plt.show()
+```
+
+The bootstrap standard error is very close to the analytical standard error. That is reassuring: both approaches suggest a similar level of uncertainty around the observed treatment effect. Using the bootstrap standard error, the approximate 95% confidence interval is reported above.
+
+## The Central Limit Theorem
+
+The central limit theorem helps explain why many estimators have approximately normal sampling distributions when the sample size is large. To study this idea, I repeatedly simulate the estimator `theta_hat` under different sample sizes.
+
+```{python}
+def simulate_theta_hat(n, pi_A=0.22, pi_B=0.18, reps=1000):
+    vals = []
+    for _ in range(reps):
+        A_sim = np.random.binomial(1, pi_A, n)
+        B_sim = np.random.binomial(1, pi_B, n)
+        vals.append(A_sim.mean() - B_sim.mean())
+    return np.array(vals)
+
+sample_sizes = [25, 50, 100, 500]
+simulated_results = {n_i: simulate_theta_hat(n_i) for n_i in sample_sizes}
+```
+
+```{python}
+#| echo: false
+
+fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+
+for ax, n_i in zip(axes.ravel(), sample_sizes):
+    vals = simulated_results[n_i]
+    ax.hist(vals, bins=30, edgecolor="black")
+    ax.axvline(theta_true, linestyle="--", linewidth=2)
+    ax.set_title(f"n = {n_i}")
+    ax.set_xlabel("Estimated treatment effect")
+    ax.set_ylabel("Frequency")
+
+fig.suptitle("Sampling Distribution of the Estimator Under Different Sample Sizes", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+With small sample sizes, the distribution of the estimator is rougher and more dispersed. As the sample size increases, the distribution becomes more concentrated and more bell-shaped. This is the central limit theorem at work.
+
+## Hypothesis Testing
+
+A common question in A/B testing is whether the observed difference is large enough to reject the null hypothesis of no treatment effect.
+
+Here I test the null hypothesis that the treatment effect equals zero against the alternative that it is not zero, using a z-statistic based on the analytical standard error.
+
+```{python}
+z_stat = theta_hat / analytic_se
+p_value = 2 * (1 - norm.cdf(abs(z_stat)))
+
+test_table = pd.DataFrame({
+    "Statistic": ["Estimate", "Std. Error", "z-statistic", "p-value"],
+    "Value": [theta_hat, analytic_se, z_stat, p_value]
+})
+
+test_table
+```
+
+The p-value measures how surprising the observed estimate would be if the true treatment effect were actually zero. A small p-value provides evidence against the null hypothesis. In this simulation, the p-value is low enough to suggest that the difference between the two versions is unlikely to be explained by random variation alone.
+
+## The T-Test as a Regression
+
+A difference-in-means test can also be written as a regression. Define an outcome variable `Y` equal to signup status and a treatment indicator `D` equal to 1 for group A and 0 for group B. Then consider the linear model:
+
+`Y = beta_0 + beta_1 D + u`
+
+In this setup, `beta_0` is the mean outcome in group B, and `beta_1` is the difference in means between groups A and B. That means `beta_1` estimates the same quantity as `theta_hat`.
+
+```{python}
+df = pd.DataFrame({
+    "Y": np.concatenate([A, B]),
+    "D": np.concatenate([np.ones(n), np.zeros(n)])
+})
+
+X = sm.add_constant(df["D"])
+model = sm.OLS(df["Y"], X).fit()
+
+reg_table = pd.DataFrame({
+    "Coefficient": ["Intercept", "Treatment indicator"],
+    "Estimate": [model.params["const"], model.params["D"]],
+    "Std. Error": [model.bse["const"], model.bse["D"]],
+    "t-stat": [model.tvalues["const"], model.tvalues["D"]],
+    "p-value": [model.pvalues["const"], model.pvalues["D"]]
+})
+
+reg_table
+```
+
+The coefficient on the treatment indicator is the estimated effect of version A relative to version B. As expected, this regression coefficient is the same difference in sample means studied earlier. This provides a useful bridge between classical A/B testing and regression-based analysis.
+
+## The Problem with Peeking
+
+One of the most important practical issues in experimentation is peeking, or repeatedly checking significance during data collection and stopping early when the result looks favorable. This can inflate the false positive rate.
+
+To demonstrate this, I simulate experiments under the null hypothesis, where both versions have the same true signup rate of 0.20. In each experiment, I check significance after every additional 100 observations per group, up to 1,000 observations. If the p-value falls below 0.05 at any checkpoint, I count that experiment as a false positive.
+
+```{python}
+def peeking_experiment(pi=0.20, total_n=1000, step=100):
+    A_null = np.random.binomial(1, pi, total_n)
+    B_null = np.random.binomial(1, pi, total_n)
+
+    for n_i in range(step, total_n + 1, step):
+        A_sub = A_null[:n_i]
+        B_sub = B_null[:n_i]
+
+        theta_hat_i = A_sub.mean() - B_sub.mean()
+
+        se_i = np.sqrt(
+            A_sub.mean() * (1 - A_sub.mean()) / n_i +
+            B_sub.mean() * (1 - B_sub.mean()) / n_i
+        )
+
+        if se_i == 0:
+            continue
+
+        z_i = theta_hat_i / se_i
+        p_i = 2 * (1 - norm.cdf(abs(z_i)))
+
+        if p_i < 0.05:
+            return 1
+
+    return 0
+
+np.random.seed(495)
+peeking_results = np.array([peeking_experiment() for _ in range(10000)])
+false_positive_rate = peeking_results.mean()
+
+false_positive_rate
+```
+
+Under proper single-shot testing at the 5% significance level, the false positive rate should be close to 0.05. However, when repeatedly checking results and stopping whenever significance appears, the probability of a false rejection becomes noticeably larger. This demonstrates why peeking is problematic in practice.
+
+## Conclusion
+
+This simulated A/B test provides a compact illustration of several core ideas in frequentist inference. The law of large numbers explains why estimates stabilize with more data, the bootstrap and analytical formulas quantify uncertainty, and the central limit theorem helps justify normal approximations for large samples.
+
+The same A/B test can also be understood through hypothesis testing and regression, showing how these tools are closely connected. Finally, the peeking simulation highlights an important practical warning: even when there is truly no treatment effect, repeated checking can produce misleadingly significant results.
+
+Overall, frequentist methods provide a useful framework for analyzing A/B tests, but they must be applied carefully and interpreted with attention to uncertainty, sample size, and experimental design.
