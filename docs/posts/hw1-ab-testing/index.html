@@ -227,7 +227,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="simulating-data">Simulating Data</h2>
 <p>To make the analysis concrete, I simulate data from an experiment in which the true signup probability is 0.22 for version A and 0.18 for version B. This implies a true treatment effect of 0.04.</p>
 <p>I generate 1,000 observations in each group.</p>
-<div id="e108bb9d" class="cell" data-execution_count="1">
+<div id="7b9c540d" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
@@ -286,7 +286,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p>The observed difference in sample means is shown below.</p>
-<div id="c3677050" class="cell" data-execution_count="2">
+<div id="209352ab" class="cell" data-execution_count="2">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>theta_hat</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="2">
 <pre><code>0.026000000000000023</code></pre>
@@ -298,7 +298,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="the-law-of-large-numbers">The Law of Large Numbers</h2>
 <p>The law of large numbers says that sample averages tend to get closer to their expected values as the sample size increases. In this context, that means the running estimate of the difference in means should gradually stabilize near the true effect.</p>
 <p>To illustrate this, I compute the cumulative average of the observation-level differences <code>A_i - B_i</code> as the sample grows.</p>
-<div id="ec8993cc" class="cell" data-execution_count="3">
+<div id="2c33591a" class="cell" data-execution_count="3">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>diffs <span class="op">=</span> A <span class="op">-</span> B</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>running_mean <span class="op">=</span> np.cumsum(diffs) <span class="op">/</span> np.arange(<span class="dv">1</span>, n <span class="op">+</span> <span class="dv">1</span>)</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -352,7 +352,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 </div>
-<div id="033eec12" class="cell" data-execution_count="4">
+<div id="474d5f6b" class="cell" data-execution_count="4">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -367,7 +367,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="bootstrap-standard-errors">Bootstrap Standard Errors</h2>
 <p>A point estimate alone is not enough; we also want to know how uncertain that estimate is. One way to quantify uncertainty is with a standard error. In this section, I estimate the standard error of <code>theta_hat</code> using the bootstrap.</p>
 <p>The bootstrap repeatedly resamples the observed data with replacement, recomputes the estimator in each resample, and uses the variability across bootstrap replications as an estimate of sampling uncertainty.</p>
-<div id="6c6a52ca" class="cell" data-execution_count="5">
+<div id="6e8e6bd0" class="cell" data-execution_count="5">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>B_boot <span class="op">=</span> <span class="dv">1000</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>boot_estimates <span class="op">=</span> []</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -440,7 +440,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 </div>
-<div id="110321f5" class="cell" data-execution_count="6">
+<div id="dc8221f2" class="cell" data-execution_count="6">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -454,7 +454,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="the-central-limit-theorem" class="level2">
 <h2 class="anchored" data-anchor-id="the-central-limit-theorem">The Central Limit Theorem</h2>
 <p>The central limit theorem helps explain why many estimators have approximately normal sampling distributions when the sample size is large. To study this idea, I repeatedly simulate the estimator <code>theta_hat</code> under different sample sizes.</p>
-<div id="1c21611c" class="cell" data-execution_count="7">
+<div id="cd3545c6" class="cell" data-execution_count="7">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> simulate_theta_hat(n, pi_A<span class="op">=</span><span class="fl">0.22</span>, pi_B<span class="op">=</span><span class="fl">0.18</span>, reps<span class="op">=</span><span class="dv">1000</span>):</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    vals <span class="op">=</span> []</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(reps):</span>
@@ -466,7 +466,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>sample_sizes <span class="op">=</span> [<span class="dv">25</span>, <span class="dv">50</span>, <span class="dv">100</span>, <span class="dv">500</span>]</span>
 <span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>simulated_results <span class="op">=</span> {n_i: simulate_theta_hat(n_i) <span class="cf">for</span> n_i <span class="kw">in</span> sample_sizes}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="698b7d67" class="cell" data-execution_count="8">
+<div id="cdaf34e1" class="cell" data-execution_count="8">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -481,7 +481,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="hypothesis-testing">Hypothesis Testing</h2>
 <p>A common question in A/B testing is whether the observed difference is large enough to reject the null hypothesis of no treatment effect.</p>
 <p>Here I test the null hypothesis that the treatment effect equals zero against the alternative that it is not zero, using a z-statistic based on the analytical standard error.</p>
-<div id="298c3073" class="cell" data-execution_count="9">
+<div id="f7a1db1c" class="cell" data-execution_count="9">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>z_stat <span class="op">=</span> theta_hat <span class="op">/</span> analytic_se</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>p_value <span class="op">=</span> <span class="dv">2</span> <span class="op">*</span> (<span class="dv">1</span> <span class="op">-</span> norm.cdf(<span class="bu">abs</span>(z_stat)))</span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -537,7 +537,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>A difference-in-means test can also be written as a regression. Define an outcome variable <code>Y</code> equal to signup status and a treatment indicator <code>D</code> equal to 1 for group A and 0 for group B. Then consider the linear model:</p>
 <p><code>Y = beta_0 + beta_1 D + u</code></p>
 <p>In this setup, <code>beta_0</code> is the mean outcome in group B, and <code>beta_1</code> is the difference in means between groups A and B. That means <code>beta_1</code> estimates the same quantity as <code>theta_hat</code>.</p>
-<div id="4aa10bff" class="cell" data-execution_count="10">
+<div id="5392776d" class="cell" data-execution_count="10">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.DataFrame({</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Y"</span>: np.concatenate([A, B]),</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"D"</span>: np.concatenate([np.ones(n), np.zeros(n)])</span>
@@ -599,7 +599,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="the-problem-with-peeking">The Problem with Peeking</h2>
 <p>One of the most important practical issues in experimentation is peeking, or repeatedly checking significance during data collection and stopping early when the result looks favorable. This can inflate the false positive rate.</p>
 <p>To demonstrate this, I simulate experiments under the null hypothesis, where both versions have the same true signup rate of 0.20. In each experiment, I check significance after every additional 100 observations per group, up to 1,000 observations. If the p-value falls below 0.05 at any checkpoint, I count that experiment as a false positive.</p>
-<div id="d92148df" class="cell" data-execution_count="11">
+<div id="b88b19ac" class="cell" data-execution_count="11">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> peeking_experiment(pi<span class="op">=</span><span class="fl">0.20</span>, total_n<span class="op">=</span><span class="dv">1000</span>, step<span class="op">=</span><span class="dv">100</span>):</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    A_null <span class="op">=</span> np.random.binomial(<span class="dv">1</span>, pi, total_n)</span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    B_null <span class="op">=</span> np.random.binomial(<span class="dv">1</span>, pi, total_n)</span>
