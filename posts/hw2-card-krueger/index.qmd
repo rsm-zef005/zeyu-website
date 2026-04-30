@@ -18,7 +18,7 @@ This question matters because the standard competitive model predicts that a bin
 
 The paper's empirical strategy is a difference-in-differences design. Rather than comparing New Jersey before and after the increase in isolation, the authors compare the change in New Jersey to the simultaneous change in Pennsylvania. This matters because employment could have changed over time for many other reasons, including recession conditions in the region. Using Pennsylvania as a control group helps net out those common time effects.
 
-In this post, I follow the structure of the assignment closely. First, I explain the paper's research question and empirical design. Second, I replicate the paper's key statistical finding: the relative increase in employment in New Jersey versus Pennsylvania after the minimum-wage change. Third, I do one additional thing by graphing the core difference-in-differences result and explaining why the design can support a causal interpretation.
+In this replication, I focus on the paper’s main employment result: the difference-in-differences estimate comparing the change in New Jersey employment to the change in Pennsylvania employment before and after the 1992 minimum-wage increase. My results closely reproduce the positive DID estimate reported in the original paper.
 
 ## Data and Research Design
 
@@ -101,6 +101,8 @@ df["gap"] = np.where(df["STATE"] == 0, 0,
                      np.where(df["WAGE_ST"] >= 5.05, 0,
                               np.where(df["WAGE_ST"] > 0, (5.05 - df["WAGE_ST"]) / df["WAGE_ST"], np.nan)))
 ```
+
+Following the paper’s treatment of permanently closed stores, I set wave 2 employment equal to zero for stores with STATUS2 == 3. For the balanced-sample specification, I instead use only stores with non-missing employment in both waves.
 
 ### Replicating selected values from Table 2
 
