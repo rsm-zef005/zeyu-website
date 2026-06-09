@@ -112,8 +112,9 @@ For each attribute, I re-fit the linear model without that attribute and compute
 I implemented exact Shapley values directly from the linear-regression $R^2$ metric:
 
 $$
-\phi_j = \sum_{S \subseteq P \setminus \{j\}} rac{|S|!\,(p-|S|-1)!}{p!} \left[R^2(S \cup \{j\}) - R^2(S)
-ight]
+\phi_j = \sum_{S \subseteq P \setminus \{j\}}
+\frac{|S|!\,(p-|S|-1)!}{p!}
+\left[ R^2(S \cup \{j\}) - R^2(S) \right]
 $$
 
 where $P$ is the set of all predictors and $p=9$ in this application.

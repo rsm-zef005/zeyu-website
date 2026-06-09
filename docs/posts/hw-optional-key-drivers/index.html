@@ -482,8 +482,9 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="shapley-values">Shapley values</h3>
 <p>I implemented exact Shapley values directly from the linear-regression <span class="math inline">\(R^2\)</span> metric:</p>
 <p><span class="math display">\[
-\phi_j = \sum_{S \subseteq P \setminus \{j\}} rac{|S|!\,(p-|S|-1)!}{p!} \left[R^2(S \cup \{j\}) - R^2(S)
-ight]
+\phi_j = \sum_{S \subseteq P \setminus \{j\}}
+\frac{|S|!\,(p-|S|-1)!}{p!}
+\left[ R^2(S \cup \{j\}) - R^2(S) \right]
 \]</span></p>
 <p>where <span class="math inline">\(P\)</span> is the set of all predictors and <span class="math inline">\(p=9\)</span> in this application.</p>
 </section>
