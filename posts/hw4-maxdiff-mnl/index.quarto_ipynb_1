@@ -1,0 +1,858 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"MaxDiff Analysis of MSBA Class Preferences\"\n",
+        "subtitle: \"Counts, MLE, and Bayesian Estimation of the MNL Model\"\n",
+        "author: \"Zeyu Fang\"\n",
+        "date: today\n",
+        "jupyter: python3\n",
+        "format:\n",
+        "  html:\n",
+        "    toc: true\n",
+        "    code-fold: false\n",
+        "---\n",
+        "\n",
+        "## Introduction\n",
+        "\n",
+        "Best-Worst Scaling, often called MaxDiff, is a survey method for measuring relative preferences. Instead of asking respondents to rate every item on a numeric scale, MaxDiff repeatedly shows a small subset of items and asks the respondent to pick the **best** and the **worst** item from that set. This format is useful because people are usually much better at making trade-offs than at using rating scales consistently. A respondent may interpret a “7 out of 10” very differently from another respondent, but “best” and “worst” force a direct comparison.\n",
+        "\n",
+        "In this assignment, the items are the core MSBA classes at UC San Diego Rady. The goal is to estimate which classes students prefer most and least using three different approaches. First, I compute a simple counts analysis based on how often each class is chosen best versus worst. Second, I estimate a multinomial logit (MNL) model by maximum likelihood. Third, I fit the same MNL model using Bayesian estimation with a random-walk Metropolis-Hastings sampler.\n",
+        "\n",
+        "These three approaches answer slightly different questions. The counts analysis is descriptive: it asks which classes are chosen best more often than worst when they appear. The likelihood-based MNL model asks which latent utility values make the observed choices most probable. The Bayesian version asks how uncertainty about those utility values should be summarized after combining the likelihood with a prior. Looking at all three side by side is useful because it separates the broad preference signal from the modeling assumptions used to sharpen that signal.\n",
+        "\n",
+        "I expect the broad ranking to be similar across all three methods. The counts analysis should give a quick descriptive summary, while the MNL methods should provide a more principled model-based ranking. The Bayesian version should be especially useful for uncertainty quantification, since posterior draws can be transformed directly into credible intervals for preference shares.\n",
+        "\n",
+        "## The Data"
+      ],
+      "id": "b778579d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "from scipy.optimize import minimize\n",
+        "from scipy.special import logsumexp\n",
+        "\n",
+        "plt.rcParams[\"figure.figsize\"] = (8, 5)\n",
+        "plt.rcParams[\"axes.titlesize\"] = 18\n",
+        "plt.rcParams[\"axes.labelsize\"] = 13\n",
+        "plt.rcParams[\"xtick.labelsize\"] = 11\n",
+        "plt.rcParams[\"ytick.labelsize\"] = 11\n",
+        "\n",
+        "np.random.seed(123)\n",
+        "\n",
+        "raw = pd.read_csv(\"../../maxdiff_design_and_choices.csv\")\n",
+        "labels = (\n",
+        "    pd.read_csv(\"../../maxdiff_item_labels.csv\")[[\"Item #\", \"Item\"]]\n",
+        "      .rename(columns={\"Item #\": \"ItemID\", \"Item\": \"Label\"})\n",
+        ")\n",
+        "\n",
+        "raw = raw.rename(columns={\"Item\": \"ItemID\"})\n",
+        "raw = raw.merge(labels, on=\"ItemID\", how=\"left\")\n",
+        "raw.head()"
+      ],
+      "id": "32bb875c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The raw file has one row per item shown on a task. Each row records the respondent ID, task number, slot position, item ID, and whether that item was chosen as best (`Response = 1`), worst (`Response = -1`), or neither (`Response = 0`).\n",
+        "\n",
+        "The assignment description says each MaxDiff task should show 4 items and contain exactly one best pick, one worst pick, and two neutral rows. I therefore start with a sanity check and then restrict the analysis to tasks that match that standard MaxDiff structure."
+      ],
+      "id": "d8fe3cf6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "task_size = raw.groupby([\"Record ID\", \"Task\"]).size()\n",
+        "resp_check = raw.groupby([\"Record ID\", \"Task\"])[\"Response\"].value_counts().unstack(fill_value=0)\n",
+        "max_item = raw.groupby([\"Record ID\", \"Task\"])[\"ItemID\"].max()\n",
+        "\n",
+        "valid_task = (\n",
+        "    (task_size == 4)\n",
+        "    & (resp_check.get(1, 0) == 1)\n",
+        "    & (resp_check.get(-1, 0) == 1)\n",
+        "    & (resp_check.get(0, 0) == 2)\n",
+        "    & (max_item <= 10)\n",
+        ")\n",
+        "\n",
+        "sanity_table = pd.DataFrame({\n",
+        "    \"Quantity\": [\n",
+        "        \"Unique respondents in raw file\",\n",
+        "        \"Tasks in raw file\",\n",
+        "        \"Tasks matching standard MaxDiff structure\",\n",
+        "        \"Share of tasks retained\"\n",
+        "    ],\n",
+        "    \"Value\": [\n",
+        "        raw[\"Record ID\"].nunique(),\n",
+        "        len(task_size),\n",
+        "        int(valid_task.sum()),\n",
+        "        round(valid_task.mean(), 3)\n",
+        "    ]\n",
+        "})\n",
+        "sanity_table"
+      ],
+      "id": "00f3a5ca",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = raw.set_index([\"Record ID\", \"Task\"]).loc[valid_task[valid_task].index].reset_index().copy()\n",
+        "\n",
+        "N = df[\"Record ID\"].nunique()\n",
+        "T = df.groupby(\"Record ID\")[\"Task\"].nunique().iloc[0]\n",
+        "J_task = df.groupby([\"Record ID\", \"Task\"]).size().iloc[0]\n",
+        "J_total = df[\"ItemID\"].nunique()\n",
+        "\n",
+        "basic_table = pd.DataFrame({\n",
+        "    \"Quantity\": [\"Respondents (N)\", \"Tasks per respondent (T)\", \"Items per task\", \"Items in study\"],\n",
+        "    \"Value\": [N, T, J_task, J_total]\n",
+        "})\n",
+        "basic_table"
+      ],
+      "id": "a051c246",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "After applying the sanity check, the usable MaxDiff sample contains respondents completing standard 4-item MaxDiff tasks across 10 classes. I also count how often each class is shown. A balanced MaxDiff design should expose each item roughly equally often."
+      ],
+      "id": "52563ce6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "shown_counts = (\n",
+        "    df.groupby([\"ItemID\", \"Label\"]).size().reset_index(name=\"Times shown\")\n",
+        "      .sort_values(\"ItemID\")\n",
+        ")\n",
+        "shown_counts"
+      ],
+      "id": "293b22f2",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plot_labels = shown_counts[\"Label\"].str.replace(\"MGTA \", \"\", regex=False)\n",
+        "plt.barh(plot_labels, shown_counts[\"Times shown\"])\n",
+        "plt.title(\"Item Exposure Counts\")\n",
+        "plt.xlabel(\"Times shown\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "bb917b93",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The exposure counts are fairly even, which is reassuring. Balanced exposure matters because it makes the simple counts analysis more interpretable and reduces the risk that some items look popular merely because they were shown more often.\n",
+        "\n",
+        "## Counts Analysis\n",
+        "\n",
+        "A simple way to summarize MaxDiff data is to compare how often each item is chosen as best versus worst, conditional on being shown. For item $j$, define\n",
+        "\n",
+        "$$\n",
+        "\\text{score}_j = \\%\\text{best}_j - \\%\\text{worst}_j.\n",
+        "$$\n",
+        "\n",
+        "A score near +1 means an item is almost always picked best when shown. A score near -1 means it is almost always picked worst. A score near 0 means the item sits near the middle of the preference ranking."
+      ],
+      "id": "7ba93d04"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "shown = df.groupby(\"ItemID\").size()\n",
+        "best = df[df[\"Response\"] == 1].groupby(\"ItemID\").size()\n",
+        "worst = df[df[\"Response\"] == -1].groupby(\"ItemID\").size()\n",
+        "\n",
+        "counts = (\n",
+        "    pd.DataFrame({\"times_shown\": shown, \"times_best\": best, \"times_worst\": worst})\n",
+        "      .fillna(0)\n",
+        "      .reset_index()\n",
+        "      .merge(labels, on=\"ItemID\", how=\"left\")\n",
+        ")\n",
+        "counts[\"pct_best\"] = counts[\"times_best\"] / counts[\"times_shown\"]\n",
+        "counts[\"pct_worst\"] = counts[\"times_worst\"] / counts[\"times_shown\"]\n",
+        "counts[\"score\"] = counts[\"pct_best\"] - counts[\"pct_worst\"]\n",
+        "\n",
+        "resp_ids = df[\"Record ID\"].unique()\n",
+        "B = 1000\n",
+        "boot_scores = np.zeros((B, len(counts)))\n",
+        "\n",
+        "for b in range(B):\n",
+        "    samp = np.random.choice(resp_ids, size=len(resp_ids), replace=True)\n",
+        "    sampled_ids = pd.Series(samp, name=\"Record ID\").to_frame()\n",
+        "    boot_df = sampled_ids.merge(df, on=\"Record ID\", how=\"left\")\n",
+        "\n",
+        "    sh = boot_df.groupby(\"ItemID\").size()\n",
+        "    be = boot_df[boot_df[\"Response\"] == 1].groupby(\"ItemID\").size()\n",
+        "    wo = boot_df[boot_df[\"Response\"] == -1].groupby(\"ItemID\").size()\n",
+        "\n",
+        "    tmp = pd.DataFrame({\"shown\": sh, \"best\": be, \"worst\": wo}).fillna(0)\n",
+        "    tmp = tmp.reindex(counts[\"ItemID\"]).fillna(0)\n",
+        "\n",
+        "    boot_scores[b, :] = tmp[\"best\"] / tmp[\"shown\"] - tmp[\"worst\"] / tmp[\"shown\"]\n",
+        "\n",
+        "counts[[\"ci_low\", \"ci_high\"]] = np.percentile(boot_scores, [2.5, 97.5], axis=0).T\n",
+        "counts = counts.sort_values(\"score\", ascending=False).reset_index(drop=True)\n",
+        "counts[\"rank\"] = np.arange(1, len(counts) + 1)\n",
+        "\n",
+        "counts_rounded = counts.copy()\n",
+        "for col in [\"pct_best\", \"pct_worst\", \"score\", \"ci_low\", \"ci_high\"]:\n",
+        "    counts_rounded[col] = counts_rounded[col].round(3)\n",
+        "\n",
+        "counts_rounded[[\"rank\", \"Label\", \"times_shown\", \"times_best\", \"times_worst\", \"pct_best\", \"pct_worst\", \"score\", \"ci_low\", \"ci_high\"]]"
+      ],
+      "id": "7301c6c4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plot_counts = counts.sort_values(\"score\", ascending=True)\n",
+        "plt.barh(plot_counts[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot_counts[\"score\"])\n",
+        "plt.errorbar(\n",
+        "    plot_counts[\"score\"],\n",
+        "    np.arange(len(plot_counts)),\n",
+        "    xerr=[plot_counts[\"score\"] - plot_counts[\"ci_low\"], plot_counts[\"ci_high\"] - plot_counts[\"score\"]],\n",
+        "    fmt=\"none\",\n",
+        "    capsize=3\n",
+        ")\n",
+        "plt.title(\"Counts Analysis: % Best Minus % Worst\")\n",
+        "plt.xlabel(\"Counts score\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "487861ff",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The counts analysis provides a very intuitive first look. The highest-scoring classes are the ones most often chosen as best when they appear, and the lowest-scoring classes are the ones most often chosen as worst. This method is fast and transparent, but it does not explicitly model the full choice process. It uses only the best and worst tallies and ignores the fact that every not-chosen item still contributed information by being available and not selected.\n",
+        "\n",
+        "One advantage of the bootstrap intervals is that they make the descriptive ranking feel less brittle. If two classes have nearly identical counts scores and their intervals overlap substantially, I should avoid over-interpreting tiny rank differences. The counts analysis is therefore best understood as a descriptive first pass rather than a definitive model of latent utility."
+      ],
+      "id": "42213606"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "counts_summary = pd.concat([\n",
+        "    counts_rounded[[\"Label\", \"score\"]].head(3).assign(group=\"Top 3 by counts\"),\n",
+        "    counts_rounded[[\"Label\", \"score\"]].tail(3).assign(group=\"Bottom 3 by counts\")\n",
+        "])\n",
+        "counts_summary"
+      ],
+      "id": "56e20381",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## From MaxDiff Data to MNL Choices\n",
+        "\n",
+        "The multinomial logit model treats each MaxDiff task as a choice problem. Suppose a task shows items $\\{a,b,c,d\\}$ and the respondent chooses item $b$ as best. The MNL probability of that best choice is\n",
+        "\n",
+        "$$\n",
+        "P(\\text{best}=b) = \\frac{\\exp(\\beta_b)}{\\exp(\\beta_a)+\\exp(\\beta_b)+\\exp(\\beta_c)+\\exp(\\beta_d)}.\n",
+        "$$\n",
+        "\n",
+        "Once the best item is removed, the worst pick can be modeled as a second MNL choice among the remaining three items with utilities flipped:\n",
+        "\n",
+        "$$\n",
+        "P(\\text{worst}=c \\mid \\text{best}=b) = \\frac{\\exp(-\\beta_c)}{\\sum_{j \\in \\{a,c,d\\}} \\exp(-\\beta_j)}.\n",
+        "$$\n",
+        "\n",
+        "So each MaxDiff task contributes **two** MNL observations: one best pick from the full set and one worst pick from the remaining set.\n",
+        "\n",
+        "An important identification issue is that only utility differences matter. If I added the same constant to every $\\beta_j$, the soft-max probabilities would not change. So one coefficient must be fixed as a reference. I normalize item 1 to have utility zero and estimate the remaining 9 coefficients."
+      ],
+      "id": "b7e7b5e5"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "rows = []\n",
+        "for (rid, task), g in df.groupby([\"Record ID\", \"Task\"]):\n",
+        "    g = g.sort_values(\"Position\")\n",
+        "    shown_items = g[\"ItemID\"].astype(int).tolist()\n",
+        "    best_item = int(g.loc[g[\"Response\"] == 1, \"ItemID\"].iloc[0])\n",
+        "    worst_item = int(g.loc[g[\"Response\"] == -1, \"ItemID\"].iloc[0])\n",
+        "\n",
+        "    rows.append({\n",
+        "        \"Record ID\": rid,\n",
+        "        \"Task\": task,\n",
+        "        \"shown\": shown_items,\n",
+        "        \"best\": best_item,\n",
+        "        \"worst\": worst_item\n",
+        "    })\n",
+        "\n",
+        "tasks = pd.DataFrame(rows)\n",
+        "tasks.head()"
+      ],
+      "id": "de72af73",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## MNL via Maximum Likelihood\n",
+        "\n",
+        "Let $\\beta_1 = 0$ be the reference utility, and let $\\beta_2,\\dots,\\beta_{10}$ be the free parameters. The log-likelihood over all tasks is\n",
+        "\n",
+        "$$\n",
+        "\\ell(\\boldsymbol{\\beta}) = \\sum_{\\text{tasks}} \\left[\n",
+        "\\beta_{j_b^*} - \\log \\sum_{j \\in \\text{shown}} e^{\\beta_j}\n",
+        "-\\beta_{j_w^*} - \\log \\sum_{j \\in \\text{shown} \\setminus \\{j_b^*\\}} e^{-\\beta_j}\n",
+        "\\right].\n",
+        "$$\n",
+        "\n",
+        "The first bracketed term is the best-pick contribution, and the second is the worst-pick contribution conditional on the best pick already being removed.\n",
+        "\n",
+        "This likelihood is attractive because it uses more of the design structure than the counts summary does. Every item shown in a task affects the denominator of a logit probability, so every appearance contributes information. The price of that additional structure is that there is no simple closed-form estimator, so I need numerical optimization."
+      ],
+      "id": "b7c6ddff"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "shown_arr = np.vstack(tasks[\"shown\"].apply(lambda x: np.array(x, dtype=int) - 1).to_numpy())\n",
+        "best_idx = tasks[\"best\"].to_numpy(dtype=int) - 1\n",
+        "worst_idx = tasks[\"worst\"].to_numpy(dtype=int) - 1\n",
+        "\n",
+        "remaining_arr = np.zeros((len(tasks), 3), dtype=int)\n",
+        "for i in range(len(tasks)):\n",
+        "    remaining_arr[i] = shown_arr[i][shown_arr[i] != best_idx[i]]\n",
+        "\n",
+        "def unpack_beta(beta_free):\n",
+        "    return np.concatenate(([0.0], np.asarray(beta_free, dtype=float)))\n",
+        "\n",
+        "def mnl_loglike(beta_free):\n",
+        "    beta = unpack_beta(beta_free)\n",
+        "\n",
+        "    v_shown = beta[shown_arr]\n",
+        "    ll_best = beta[best_idx] - logsumexp(v_shown, axis=1)\n",
+        "\n",
+        "    v_remain = -beta[remaining_arr]\n",
+        "    ll_worst = -beta[worst_idx] - logsumexp(v_remain, axis=1)\n",
+        "\n",
+        "    return np.sum(ll_best + ll_worst)\n",
+        "\n",
+        "def mnl_grad(beta_free):\n",
+        "    beta = unpack_beta(beta_free)\n",
+        "    grad_full = np.zeros(J_total)\n",
+        "\n",
+        "    exp_shown = np.exp(beta[shown_arr])\n",
+        "    p_best = exp_shown / exp_shown.sum(axis=1, keepdims=True)\n",
+        "\n",
+        "    for t in range(len(tasks)):\n",
+        "        grad_full[best_idx[t]] += 1.0\n",
+        "        for k, item in enumerate(shown_arr[t]):\n",
+        "            grad_full[item] -= p_best[t, k]\n",
+        "\n",
+        "    exp_worst = np.exp(-beta[remaining_arr])\n",
+        "    p_worst = exp_worst / exp_worst.sum(axis=1, keepdims=True)\n",
+        "\n",
+        "    for t in range(len(tasks)):\n",
+        "        grad_full[worst_idx[t]] -= 1.0\n",
+        "        for k, item in enumerate(remaining_arr[t]):\n",
+        "            grad_full[item] += p_worst[t, k]\n",
+        "\n",
+        "    return grad_full[1:]\n",
+        "\n",
+        "def neg_mnl_loglike(beta_free):\n",
+        "    return -mnl_loglike(beta_free)\n",
+        "\n",
+        "def neg_mnl_grad(beta_free):\n",
+        "    return -mnl_grad(beta_free)\n",
+        "\n",
+        "beta_grid = np.linspace(-2.5, 2.5, 200)\n",
+        "ll_grid = []\n",
+        "\n",
+        "for val in beta_grid:\n",
+        "    b = np.zeros(J_total - 1)\n",
+        "    b[0] = val\n",
+        "    ll_grid.append(mnl_loglike(b))"
+      ],
+      "id": "cebecae4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plt.plot(beta_grid, ll_grid, linewidth=2)\n",
+        "plt.title(\"Profile Log-Likelihood for One Utility Coefficient\")\n",
+        "plt.xlabel(\"Candidate value\")\n",
+        "plt.ylabel(\"Log-likelihood\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "54fd0273",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The profile plot is not the full multivariate likelihood, but it is still useful. It shows the familiar shape of a well-behaved objective function: concave near the optimum and sharply worse as the parameter moves too far in either direction."
+      ],
+      "id": "1bb69a7b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "out = minimize(\n",
+        "    neg_mnl_loglike,\n",
+        "    x0=np.zeros(J_total - 1),\n",
+        "    jac=neg_mnl_grad,\n",
+        "    method=\"BFGS\"\n",
+        ")\n",
+        "\n",
+        "beta_hat_free = out.x\n",
+        "hess_inv = out.hess_inv\n",
+        "se_hat_free = np.sqrt(np.diag(hess_inv))\n",
+        "\n",
+        "beta_hat = unpack_beta(beta_hat_free)\n",
+        "se_hat = np.concatenate(([np.nan], se_hat_free))\n",
+        "shares_mle = np.exp(beta_hat) / np.exp(beta_hat).sum()\n",
+        "\n",
+        "mle_table = labels.copy()\n",
+        "mle_table[\"beta_mle\"] = beta_hat\n",
+        "mle_table[\"se_mle\"] = se_hat\n",
+        "mle_table[\"share_mle\"] = shares_mle\n",
+        "mle_table = mle_table.sort_values(\"share_mle\", ascending=False).reset_index(drop=True)\n",
+        "\n",
+        "mle_table_rounded = mle_table.copy()\n",
+        "mle_table_rounded[[\"beta_mle\", \"se_mle\", \"share_mle\"]] = mle_table_rounded[[\"beta_mle\", \"se_mle\", \"share_mle\"]].round(4)\n",
+        "mle_table_rounded"
+      ],
+      "id": "33dcc8dd",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "opt_summary = pd.DataFrame({\n",
+        "    \"Quantity\": [\"Converged\", \"Function value\", \"Iterations\"],\n",
+        "    \"Value\": [out.success, round(out.fun, 3), out.nit]\n",
+        "})\n",
+        "opt_summary"
+      ],
+      "id": "0329df64",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plot_mle = mle_table.sort_values(\"share_mle\", ascending=True)\n",
+        "plt.barh(plot_mle[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot_mle[\"share_mle\"])\n",
+        "plt.title(\"MNL via Maximum Likelihood: Shares of Preference\")\n",
+        "plt.xlabel(\"Estimated share of preference\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "95671099",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The MLE estimates tell a similar story to the counts analysis, but they are now grounded in an explicit model of the best-worst choice process. The estimated shares answer a clean counterfactual question: if all 10 classes appeared on a single screen, what fraction of choices would each class receive according to the fitted MNL model?"
+      ],
+      "id": "69f24eed"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "mle_summary = pd.concat([\n",
+        "    mle_table_rounded[[\"Label\", \"share_mle\"]].head(3).assign(group=\"Top 3 by MLE share\"),\n",
+        "    mle_table_rounded[[\"Label\", \"share_mle\"]].tail(3).assign(group=\"Bottom 3 by MLE share\")\n",
+        "])\n",
+        "mle_summary"
+      ],
+      "id": "1f9962ba",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## MNL via Bayesian Estimation\n",
+        "\n",
+        "For the Bayesian version, I use the same MNL likelihood and combine it with a weakly informative prior:\n",
+        "\n",
+        "$$\n",
+        "\\boldsymbol{\\beta} \\sim N(\\mathbf{0},\\; 10I).\n",
+        "$$\n",
+        "\n",
+        "That prior is diffuse enough not to dominate the data, but it still regularizes the coefficients away from implausibly large values.\n",
+        "\n",
+        "The posterior has no closed-form expression that I can sample from directly, so I use a random-walk Metropolis-Hastings algorithm. Starting from an initial parameter vector, the sampler proposes a nearby candidate, compares the posterior density of the proposal to the current state, and either accepts or rejects the move. Repeating this many times produces a Markov chain whose stationary distribution is the posterior."
+      ],
+      "id": "84467459"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def log_prior(beta_free):\n",
+        "    return np.sum(-0.5 * np.log(2 * np.pi * 10) - (beta_free ** 2) / (2 * 10))\n",
+        "\n",
+        "def log_posterior(beta_free):\n",
+        "    return mnl_loglike(beta_free) + log_prior(beta_free)\n",
+        "\n",
+        "def metropolis_hastings(beta0, n_iter=20000, step=0.08, random_state=123):\n",
+        "    rng = np.random.default_rng(random_state)\n",
+        "    K = len(beta0)\n",
+        "    draws = np.zeros((n_iter, K))\n",
+        "\n",
+        "    beta = beta0.copy()\n",
+        "    lp = log_posterior(beta)\n",
+        "    accept = 0\n",
+        "\n",
+        "    for t in range(n_iter):\n",
+        "        beta_star = beta + rng.normal(0, step, size=K)\n",
+        "        lp_star = log_posterior(beta_star)\n",
+        "\n",
+        "        if np.log(rng.uniform()) < lp_star - lp:\n",
+        "            beta = beta_star\n",
+        "            lp = lp_star\n",
+        "            accept += 1\n",
+        "\n",
+        "        draws[t] = beta\n",
+        "\n",
+        "    return {\"draws\": draws, \"accept_rate\": accept / n_iter}\n",
+        "\n",
+        "mh = metropolis_hastings(np.zeros(J_total - 1), n_iter=20000, step=0.08, random_state=123)\n",
+        "draws = mh[\"draws\"]\n",
+        "accept_rate = mh[\"accept_rate\"]\n",
+        "accept_rate"
+      ],
+      "id": "3e8b31ee",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "An acceptance rate that is neither too low nor too high is usually a good sign in a random-walk Metropolis algorithm. If the acceptance rate were extremely low, the chain would be proposing jumps that are too large. If it were extremely high, the chain would be moving only in tiny steps and mixing inefficiently."
+      ],
+      "id": "5b046382"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "burn = int(0.25 * len(draws))\n",
+        "post = draws[burn:]\n",
+        "\n",
+        "trace_items = [0, min(3, J_total - 2), min(7, J_total - 2)]\n",
+        "trace_items = sorted(list(set(trace_items)))"
+      ],
+      "id": "863a0e91",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "fig, axes = plt.subplots(len(trace_items), 1, figsize=(9, 2.5 * len(trace_items)), sharex=True)\n",
+        "if len(trace_items) == 1:\n",
+        "    axes = [axes]\n",
+        "\n",
+        "for ax, idx in zip(axes, trace_items):\n",
+        "    ax.plot(post[:, idx], linewidth=0.5)\n",
+        "    ax.set_ylabel(f\"beta_{idx+2}\")\n",
+        "\n",
+        "axes[-1].set_xlabel(\"Iteration after burn-in\")\n",
+        "fig.suptitle(\"Trace Plots for Selected Utility Coefficients\", y=1.02)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "e4fdee06",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The traces should look like fuzzy caterpillars rather than slow drifts. That is the visual sign that the chain is exploring a stable posterior region instead of wandering toward a different part of the parameter space."
+      ],
+      "id": "1a19f972"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "post_full = np.column_stack([np.zeros(len(post)), post])\n",
+        "post_shares = np.exp(post_full) / np.exp(post_full).sum(axis=1, keepdims=True)\n",
+        "\n",
+        "bayes_table = labels.copy()\n",
+        "bayes_table[\"beta_post_mean\"] = post_full.mean(axis=0)\n",
+        "bayes_table[\"beta_ci_low\"] = np.quantile(post_full, 0.025, axis=0)\n",
+        "bayes_table[\"beta_ci_high\"] = np.quantile(post_full, 0.975, axis=0)\n",
+        "bayes_table[\"share_post_mean\"] = post_shares.mean(axis=0)\n",
+        "bayes_table[\"share_ci_low\"] = np.quantile(post_shares, 0.025, axis=0)\n",
+        "bayes_table[\"share_ci_high\"] = np.quantile(post_shares, 0.975, axis=0)\n",
+        "bayes_table = bayes_table.sort_values(\"share_post_mean\", ascending=False).reset_index(drop=True)\n",
+        "\n",
+        "bayes_table_rounded = bayes_table.copy()\n",
+        "for col in [\"beta_post_mean\", \"beta_ci_low\", \"beta_ci_high\", \"share_post_mean\", \"share_ci_low\", \"share_ci_high\"]:\n",
+        "    bayes_table_rounded[col] = bayes_table_rounded[col].round(4)\n",
+        "\n",
+        "bayes_table_rounded"
+      ],
+      "id": "dadbab0b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plot_bayes = bayes_table.sort_values(\"share_post_mean\", ascending=True)\n",
+        "plt.barh(plot_bayes[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot_bayes[\"share_post_mean\"])\n",
+        "plt.errorbar(\n",
+        "    plot_bayes[\"share_post_mean\"],\n",
+        "    np.arange(len(plot_bayes)),\n",
+        "    xerr=[plot_bayes[\"share_post_mean\"] - plot_bayes[\"share_ci_low\"], plot_bayes[\"share_ci_high\"] - plot_bayes[\"share_post_mean\"]],\n",
+        "    fmt=\"none\",\n",
+        "    capsize=3\n",
+        ")\n",
+        "plt.title(\"Bayesian MNL: Posterior Mean Shares with 95% Credible Intervals\")\n",
+        "plt.xlabel(\"Posterior mean share of preference\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "ac770eb7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The posterior means should be close to the MLE estimates, because the prior is weak and the sample is reasonably informative. The main advantage of the Bayesian approach is that uncertainty on derived quantities, such as preference shares, comes almost for free. I simply compute the shares for every posterior draw and then summarize them with means and quantiles."
+      ],
+      "id": "064f2b7b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "bayes_summary = pd.concat([\n",
+        "    bayes_table_rounded[[\"Label\", \"share_post_mean\", \"share_ci_low\", \"share_ci_high\"]].head(3).assign(group=\"Top 3 by posterior mean\"),\n",
+        "    bayes_table_rounded[[\"Label\", \"share_post_mean\", \"share_ci_low\", \"share_ci_high\"]].tail(3).assign(group=\"Bottom 3 by posterior mean\")\n",
+        "])\n",
+        "bayes_summary"
+      ],
+      "id": "118a5d89",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Comparing the Three Methods\n",
+        "\n",
+        "Now I combine the counts, MLE, and Bayesian results into one comparison table."
+      ],
+      "id": "0ea84fec"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "comparison = labels.copy()\n",
+        "comparison = comparison.merge(counts[[\"ItemID\", \"score\"]], on=\"ItemID\")\n",
+        "comparison = comparison.merge(mle_table[[\"ItemID\", \"share_mle\"]], on=\"ItemID\")\n",
+        "comparison = comparison.merge(bayes_table[[\"ItemID\", \"share_post_mean\"]], on=\"ItemID\")\n",
+        "comparison = comparison.rename(columns={\n",
+        "    \"score\": \"counts_score\",\n",
+        "    \"share_post_mean\": \"share_bayes\"\n",
+        "})\n",
+        "\n",
+        "comparison[\"counts_rank\"] = comparison[\"counts_score\"].rank(ascending=False, method=\"min\").astype(int)\n",
+        "comparison[\"mle_rank\"] = comparison[\"share_mle\"].rank(ascending=False, method=\"min\").astype(int)\n",
+        "comparison[\"bayes_rank\"] = comparison[\"share_bayes\"].rank(ascending=False, method=\"min\").astype(int)\n",
+        "\n",
+        "comparison = comparison.sort_values(\"mle_rank\").reset_index(drop=True)\n",
+        "\n",
+        "comparison_rounded = comparison.copy()\n",
+        "comparison_rounded[[\"counts_score\", \"share_mle\", \"share_bayes\"]] = comparison_rounded[[\"counts_score\", \"share_mle\", \"share_bayes\"]].round(4)\n",
+        "comparison_rounded"
+      ],
+      "id": "cdc99db6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "fig, axes = plt.subplots(1, 3, figsize=(16, 7), sharey=False)\n",
+        "\n",
+        "plot1 = comparison.sort_values(\"counts_score\")\n",
+        "axes[0].barh(plot1[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot1[\"counts_score\"])\n",
+        "axes[0].set_title(\"Counts\")\n",
+        "axes[0].set_xlabel(\"% best - % worst\")\n",
+        "\n",
+        "plot2 = comparison.sort_values(\"share_mle\")\n",
+        "axes[1].barh(plot2[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot2[\"share_mle\"])\n",
+        "axes[1].set_title(\"MLE MNL\")\n",
+        "axes[1].set_xlabel(\"Share of preference\")\n",
+        "\n",
+        "plot3 = comparison.sort_values(\"share_bayes\")\n",
+        "axes[2].barh(plot3[\"Label\"].str.replace(\"MGTA \", \"\", regex=False), plot3[\"share_bayes\"])\n",
+        "axes[2].set_title(\"Bayesian MNL\")\n",
+        "axes[2].set_xlabel(\"Posterior mean share\")\n",
+        "\n",
+        "fig.suptitle(\"Comparing Counts, MLE, and Bayesian MNL\", y=1.02)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "738ee463",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The three methods should agree most strongly at the top and bottom of the ranking. That is where the data contain the clearest signal. Any disagreement should mostly appear in the middle, where several classes have similar utility and small amounts of sampling noise can reshuffle the order."
+      ],
+      "id": "10b6b527"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "rank_compare = pd.DataFrame({\n",
+        "    \"Pair\": [\n",
+        "        \"Counts vs MLE\",\n",
+        "        \"Counts vs Bayes\",\n",
+        "        \"MLE vs Bayes\"\n",
+        "    ],\n",
+        "    \"Spearman correlation\": [\n",
+        "        comparison[[\"counts_rank\", \"mle_rank\"]].corr(method=\"spearman\").iloc[0, 1],\n",
+        "        comparison[[\"counts_rank\", \"bayes_rank\"]].corr(method=\"spearman\").iloc[0, 1],\n",
+        "        comparison[[\"mle_rank\", \"bayes_rank\"]].corr(method=\"spearman\").iloc[0, 1]\n",
+        "    ]\n",
+        "}).round(3)\n",
+        "rank_compare"
+      ],
+      "id": "5172f84d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "comparison_rounded[\"rank_spread\"] = comparison_rounded[[\"counts_rank\", \"mle_rank\", \"bayes_rank\"]].max(axis=1) - comparison_rounded[[\"counts_rank\", \"mle_rank\", \"bayes_rank\"]].min(axis=1)\n",
+        "comparison_rounded.sort_values([\"rank_spread\", \"mle_rank\"], ascending=[False, True])[[\"Label\", \"counts_rank\", \"mle_rank\", \"bayes_rank\", \"rank_spread\"]]"
+      ],
+      "id": "a419d563",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "What does the MNL add over the counts analysis? It uses the full choice structure of the MaxDiff task. Every shown item contributes information, not just the items that were explicitly selected. What does Bayes add over MLE? It makes uncertainty for derived quantities especially convenient: once I have posterior draws for the utilities, I can transform every draw into shares and compute credible intervals directly.\n",
+        "\n",
+        "## Discussion\n",
+        "\n",
+        "Substantively, the results summarize which MSBA classes students in this survey find most attractive and least attractive. The broad ranking is stable across all three methods, which makes the main conclusions more credible than if the ranking changed dramatically across approaches. The top classes appear genuinely popular, while the bottom classes are consistently less preferred.\n",
+        "\n",
+        "Methodologically, each approach has a different role. The counts analysis is the quickest descriptive summary and would work well in a dashboard or a first-pass memo. The MLE MNL model is better when I want a rigorous model-based estimate with classical standard errors. The Bayesian MNL model is best when I care about uncertainty for nonlinear quantities like preference shares or if I wanted to extend the model further, for example to a hierarchical version with respondent-level heterogeneity.\n",
+        "\n",
+        "There are also important caveats. The sample is a self-selected group of MSBA students rather than a representative sample of all possible students. Preferences may reflect when a course is taken, who teaches it, current workload, or what respondents have already completed in the program. If I had more time, I would explore respondent-level heterogeneity and check whether first-year and later-stage students rank the classes differently.\n",
+        "\n",
+        "A second limitation is that the MNL model imposes the independence-of-irrelevant-alternatives structure and assumes homogeneous preferences across respondents. Those assumptions are useful for a first pass because they keep the model interpretable and computationally manageable, but they are still simplifications. In a richer project, I would want to compare these results to a hierarchical Bayes or mixed logit specification that allows utilities to vary across people.\n",
+        "\n",
+        "## Conclusion\n",
+        "\n",
+        "This assignment showed how the same MaxDiff data can be analyzed at three different levels of sophistication. The counts analysis provided a simple and transparent summary of which classes were chosen best more often than worst. The maximum-likelihood MNL model turned those same data into estimated latent utilities and implied preference shares. The Bayesian MNL model delivered a very similar ranking while adding a direct way to quantify posterior uncertainty.\n",
+        "\n",
+        "The most reassuring result is that the broad story is stable across methods. The classes that look strong in the raw counts also tend to rank highly in the MLE and Bayesian models, and the least-preferred classes remain near the bottom across specifications. That consistency suggests the underlying preference signal is real rather than an artifact of any one estimation approach.\n",
+        "\n",
+        "From a learning perspective, this was also the most valuable part of the exercise. Writing the likelihood directly makes the logic of the MNL model much clearer than just calling a black-box estimator. Writing the MCMC sampler makes Bayes feel procedural rather than mysterious. Even if the code is not elegant, building it from scratch makes the estimation process much easier to understand and explain."
+      ],
+      "id": "71d2384a"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3",
+      "path": "/Users/nancyfang/opt/anaconda3/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

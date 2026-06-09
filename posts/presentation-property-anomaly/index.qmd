@@ -1,0 +1,205 @@
+---
+title: "How Anomaly Detection Flags Suspicious NYC Property Assessments"
+author: "Zeyu Fang"
+format:
+  revealjs:
+    embed-resources: true
+    theme: simple
+    slide-number: true
+    transition: fade
+execute:
+  echo: false
+---
+
+## The business problem
+
+::: {=html}
+<div class="hero">
+  <div>
+    <h3>Which properties should auditors review first?</h3>
+    <p>NYC has over one million assessed properties and no fraud label. The practical goal is to rank properties by how unusual their valuation looks relative to comparable properties.</p>
+  </div>
+  <div class="skyline" aria-label="NYC skyline visual">
+    <svg viewBox="0 0 520 330" role="img">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop stop-color="#16324f" offset="0"/>
+          <stop stop-color="#5d7fa3" offset="1"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="520" height="330" rx="22" fill="url(#g)"/>
+      <circle cx="420" cy="75" r="32" fill="#ffd36e" opacity=".9"/>
+      <rect x="38" y="165" width="45" height="120" fill="#e8eef4" opacity=".95"/>
+      <rect x="98" y="110" width="62" height="175" fill="#c7d5e3"/>
+      <rect x="182" y="145" width="52" height="140" fill="#f1f5f8"/>
+      <rect x="258" y="72" width="74" height="213" fill="#d8e2eb"/>
+      <rect x="356" y="136" width="58" height="149" fill="#edf2f7"/>
+      <rect x="438" y="190" width="40" height="95" fill="#bccbd9"/>
+      <path d="M295 72 L295 20 L305 72" fill="#d8e2eb"/>
+      <g fill="#16324f" opacity=".55">
+        <circle cx="57" cy="188" r="3"/><circle cx="57" cy="212" r="3"/><circle cx="57" cy="236" r="3"/>
+        <circle cx="120" cy="135" r="3"/><circle cx="120" cy="160" r="3"/><circle cx="120" cy="185" r="3"/>
+        <circle cx="286" cy="104" r="3"/><circle cx="286" cy="130" r="3"/><circle cx="286" cy="156" r="3"/>
+        <circle cx="386" cy="165" r="3"/><circle cx="386" cy="191" r="3"/><circle cx="386" cy="217" r="3"/>
+      </g>
+      <path d="M24 292 C120 272, 215 310, 310 288 S440 278, 496 298" fill="none" stroke="#f6f8fb" stroke-width="5" opacity=".8"/>
+    </svg>
+  </div>
+</div>
+:::
+
+::: notes
+Open with the business setting: this is not about proving guilt. It is about prioritizing review when auditors cannot inspect every property.
+:::
+
+## Turn records into fraud signals
+
+::: {=html}
+<div class="grid2">
+<div class="card">
+<h3>Raw data</h3>
+<ul>
+<li>Assessed values</li>
+<li>Market values</li>
+<li>Lot and building size</li>
+<li>ZIP and tax class</li>
+</ul>
+</div>
+<div class="formula">
+  <div class="big">value density</div>
+  <div class="eq">assessment ÷ physical size</div>
+  <div class="arrow">↓</div>
+  <div class="eq">property ratio ÷ peer-group average</div>
+</div>
+</div>
+
+<div class="visual-row">
+  <svg viewBox="0 0 900 180" role="img">
+    <rect x="20" y="35" width="190" height="105" rx="18" fill="#eef4ff" stroke="#4d7cc7"/>
+    <text x="115" y="78" text-anchor="middle" font-size="27" font-weight="700" fill="#1d3557">FULLVAL</text>
+    <text x="115" y="112" text-anchor="middle" font-size="20" fill="#1d3557">market value</text>
+    <text x="260" y="104" text-anchor="middle" font-size="50" fill="#555">÷</text>
+    <rect x="310" y="35" width="190" height="105" rx="18" fill="#fff2df" stroke="#c7842f"/>
+    <text x="405" y="78" text-anchor="middle" font-size="27" font-weight="700" fill="#7a4b08">bldvol</text>
+    <text x="405" y="112" text-anchor="middle" font-size="20" fill="#7a4b08">size proxy</text>
+    <text x="555" y="104" text-anchor="middle" font-size="50" fill="#555">→</text>
+    <rect x="610" y="35" width="250" height="105" rx="18" fill="#eaf7ee" stroke="#4c9b62"/>
+    <text x="735" y="78" text-anchor="middle" font-size="26" font-weight="700" fill="#1f6f3a">anomaly feature</text>
+    <text x="735" y="112" text-anchor="middle" font-size="20" fill="#1f6f3a">large = worth review</text>
+  </svg>
+</div>
+:::
+
+::: notes
+Explain that the features are not arbitrary. They are designed to express whether a property is unusually valued for its size and its peer group.
+:::
+
+## Reduce 29 correlated variables to 5 dimensions
+
+::: {=html}
+<div class="grid2">
+<div>
+<p>Many variables measure related ideas, so treating them as independent would double-count the same signal. PCA converts the 29 variables into orthogonal principal components.</p>
+<p><strong>Choice:</strong> retain 5 PCs, enough to preserve the main anomaly patterns while simplifying the score.</p>
+</div>
+<div>
+  <svg viewBox="0 0 520 300" role="img" aria-label="PCA scree plot visual">
+    <rect width="520" height="300" rx="18" fill="#f7f9fb"/>
+    <line x1="62" y1="246" x2="475" y2="246" stroke="#222" stroke-width="2"/>
+    <line x1="62" y1="246" x2="62" y2="36" stroke="#222" stroke-width="2"/>
+    <polyline points="72,62 112,92 152,122 192,150 232,170 272,190 312,207 352,220 392,232 432,240" fill="none" stroke="#2f6fbb" stroke-width="5" stroke-linecap="round"/>
+    <g fill="#2f6fbb">
+      <circle cx="72" cy="62" r="6"/><circle cx="112" cy="92" r="6"/><circle cx="152" cy="122" r="6"/><circle cx="192" cy="150" r="6"/><circle cx="232" cy="170" r="6"/>
+      <circle cx="272" cy="190" r="5" opacity=".45"/><circle cx="312" cy="207" r="5" opacity=".45"/><circle cx="352" cy="220" r="5" opacity=".45"/>
+    </g>
+    <line x1="232" y1="38" x2="232" y2="246" stroke="#d95f02" stroke-width="4" stroke-dasharray="9 9"/>
+    <text x="232" y="28" text-anchor="middle" font-size="22" font-weight="700" fill="#d95f02">keep 5 PCs</text>
+    <text x="265" y="284" text-anchor="middle" font-size="19" fill="#333">principal component</text>
+    <text transform="translate(22 160) rotate(-90)" text-anchor="middle" font-size="19" fill="#333">variance explained</text>
+  </svg>
+</div>
+</div>
+:::
+
+::: notes
+The key teaching point is fair weighting. PCA removes correlation, then the PCs are scaled again so a single high-variance PC does not dominate the final score.
+:::
+
+## Two anomaly scores, then rank-combine
+
+::: {=html}
+<div class="score-wrap">
+  <div class="score-card">
+    <h3>Score 1: distance</h3>
+    <svg viewBox="0 0 360 250" role="img">
+      <rect width="360" height="250" rx="18" fill="#f5f8ff"/>
+      <line x1="60" y1="215" x2="320" y2="215" stroke="#444"/>
+      <line x1="60" y1="215" x2="60" y2="35" stroke="#444"/>
+      <circle cx="170" cy="125" r="62" fill="#4d7cc7" opacity=".14"/>
+      <circle cx="170" cy="125" r="4" fill="#333"/>
+      <circle cx="278" cy="58" r="8" fill="#d73027"/>
+      <line x1="170" y1="125" x2="278" y2="58" stroke="#d73027" stroke-width="4"/>
+      <text x="180" y="112" font-size="18" fill="#333">typical centre</text>
+      <text x="250" y="43" font-size="18" fill="#a31616">far away</text>
+    </svg>
+    <p>Minkowski distance in 5-PC space.</p>
+  </div>
+  <div class="score-card">
+    <h3>Score 2: reconstruction error</h3>
+    <svg viewBox="0 0 360 250" role="img">
+      <rect width="360" height="250" rx="18" fill="#fff8f0"/>
+      <rect x="35" y="92" width="75" height="66" rx="12" fill="#f0c27b"/>
+      <rect x="148" y="105" width="64" height="40" rx="12" fill="#d89036"/>
+      <rect x="250" y="92" width="75" height="66" rx="12" fill="#f0c27b"/>
+      <path d="M110 125 H148 M212 125 H250" stroke="#555" stroke-width="5" marker-end="url(#arr)"/>
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#555"/></marker></defs>
+      <text x="72" y="132" text-anchor="middle" font-size="17" fill="#5c3300">input</text>
+      <text x="180" y="132" text-anchor="middle" font-size="17" fill="white">3-node</text>
+      <text x="287" y="132" text-anchor="middle" font-size="17" fill="#5c3300">output</text>
+      <text x="180" y="205" text-anchor="middle" font-size="19" fill="#333">large error = unusual pattern</text>
+    </svg>
+    <p>Autoencoder reconstruction error.</p>
+  </div>
+</div>
+
+<p class="center"><strong>Final score = 0.5 × rank(score 1) + 0.5 × rank(score 2)</strong></p>
+:::
+
+::: notes
+Emphasize that rank-combining avoids giving more weight to the score with larger raw units. It also asks both methods to vote on which properties are suspicious.
+:::
+
+## How the ranked list is used
+
+::: {=html}
+<div class="grid2">
+<div>
+<h3>Audit workflow</h3>
+<ol>
+<li>Sort all properties by final score.</li>
+<li>Review the top tier first.</li>
+<li>Inspect the raw values and ratios.</li>
+<li>Use expert feedback to refine exclusions and variables.</li>
+</ol>
+</div>
+<div>
+<svg viewBox="0 0 520 330" role="img" aria-label="review funnel visual">
+  <rect width="520" height="330" rx="18" fill="#f7f9fb"/>
+  <polygon points="60,55 460,55 390,120 130,120" fill="#c0392b" opacity=".9"/>
+  <polygon points="130,130 390,130 335,190 185,190" fill="#e67e22" opacity=".9"/>
+  <polygon points="185,200 335,200 292,255 228,255" fill="#f1c40f" opacity=".95"/>
+  <polygon points="228,265 292,265 270,310 250,310" fill="#2ecc71" opacity=".9"/>
+  <text x="260" y="94" text-anchor="middle" font-size="25" fill="white" font-weight="700">Top 10%</text>
+  <text x="260" y="166" text-anchor="middle" font-size="23" fill="white" font-weight="700">Top 5%</text>
+  <text x="260" y="234" text-anchor="middle" font-size="22" fill="#5c4500" font-weight="700">Top 1%</text>
+  <text x="260" y="296" text-anchor="middle" font-size="18" fill="white" font-weight="700">Top 0.1%</text>
+</svg>
+</div>
+</div>
+
+<p class="takeaway">Takeaway: the model does not accuse anyone of fraud; it creates a defensible, data-driven review queue.</p>
+:::
+
+::: notes
+End by reinforcing that anomaly detection supports investigators. The model should be adjusted with domain feedback by changing exclusions and variables, not by blindly trusting the top record.
+:::

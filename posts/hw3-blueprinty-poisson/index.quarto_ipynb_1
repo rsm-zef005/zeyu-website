@@ -1,0 +1,604 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Poisson Regression and Maximum Likelihood Estimation\"\n",
+        "subtitle: \"A Case Study of Blueprinty's Software and Patent Awards\"\n",
+        "author: Zeyu Fang\n",
+        "date: May 17\n",
+        "jupyter: python3\n",
+        "format:\n",
+        "  html:\n",
+        "    toc: true\n",
+        "    code-fold: false\n",
+        "---\n",
+        "\n",
+        "## Introduction\n",
+        "\n",
+        "Blueprinty is a small software company that helps engineering firms prepare technical blueprints for patent applications submitted to the U.S. Patent Office. Its marketing team would like to make a strong business claim: firms using Blueprinty's software appear to receive more patents, so perhaps the software helps customers get more patent applications approved.\n",
+        "\n",
+        "That is an interesting claim, but it is not easy to evaluate. In an ideal world, we would observe the same firms before and after adopting Blueprinty's software and compare their patent success rates over time. No such panel data are available. Instead, Blueprinty has assembled a cross-sectional dataset on 1,500 mature engineering firms. For each firm, the data record the number of patents awarded over the last five years, the firm's region, its age since incorporation, and whether it is a Blueprinty customer.\n",
+        "\n",
+        "The challenge is that Blueprinty's customers are not randomly assigned. If customers and non-customers differ systematically in age, geography, or other factors related to innovation, then a raw difference in patent counts may not reflect the effect of the software itself. The goal of this post is therefore twofold: first, to show how maximum likelihood estimation works in a Poisson model for count data; and second, to use Poisson regression to estimate how Blueprinty customer status is associated with patent output after controlling for observable firm characteristics.\n",
+        "\n",
+        "## Exploring the Data"
+      ],
+      "id": "48580d4e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "from scipy.optimize import minimize\n",
+        "from scipy.special import gammaln\n",
+        "import statsmodels.api as sm\n",
+        "import statsmodels.formula.api as smf\n",
+        "\n",
+        "plt.rcParams[\"figure.figsize\"] = (8, 5)\n",
+        "plt.rcParams[\"axes.titlesize\"] = 18\n",
+        "plt.rcParams[\"axes.labelsize\"] = 13\n",
+        "plt.rcParams[\"xtick.labelsize\"] = 11\n",
+        "plt.rcParams[\"ytick.labelsize\"] = 11\n",
+        "\n",
+        "df = pd.read_csv(\"../../blueprinty.csv\")\n",
+        "df.head()"
+      ],
+      "id": "f04fb2a1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The dataset contains one row per firm. The outcome variable is `patents`, the number of patents awarded over the last five years. The key explanatory variable is `iscustomer`, which equals 1 for Blueprinty customers and 0 otherwise.\n",
+        "\n",
+        "### Patent counts by customer status"
+      ],
+      "id": "90c44afd"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "mean_table = (\n",
+        "    df.groupby(\"iscustomer\", as_index=False)[\"patents\"]\n",
+        "      .mean()\n",
+        "      .assign(group=lambda x: np.where(x[\"iscustomer\"] == 1, \"Customer\", \"Non-customer\"))\n",
+        "      [[\"group\", \"patents\"]]\n",
+        "      .rename(columns={\"patents\": \"Mean patents\"})\n",
+        ")\n",
+        "mean_table[\"Mean patents\"] = mean_table[\"Mean patents\"].round(3)\n",
+        "mean_table"
+      ],
+      "id": "9249d66a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True, sharey=True)\n",
+        "bins = np.arange(-0.5, df[\"patents\"].max() + 1.5, 1)\n",
+        "\n",
+        "for ax, status, title in zip(axes, [0, 1], [\"Non-customers\", \"Customers\"]):\n",
+        "    subset = df.loc[df[\"iscustomer\"] == status, \"patents\"]\n",
+        "    ax.hist(subset, bins=bins, edgecolor=\"white\")\n",
+        "    ax.set_title(title)\n",
+        "    ax.set_xlabel(\"Patents awarded in last 5 years\")\n",
+        "    ax.set_ylabel(\"Number of firms\")\n",
+        "    ax.set_xlim(-0.5, df[\"patents\"].max() + 0.5)\n",
+        "\n",
+        "fig.suptitle(\"Patent Counts by Blueprinty Customer Status\", y=1.04)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "cbd294ee",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Customers average about 4.13 patents over the past five years, compared with about 3.47 for non-customers. The histograms tell the same story visually: the customer distribution is shifted somewhat to the right. At first glance that seems favorable to Blueprinty's marketing claim, but this raw comparison is not yet persuasive evidence of a software effect. Customers may differ from non-customers in other ways that also predict patenting.\n",
+        "\n",
+        "### Region by customer status"
+      ],
+      "id": "8d3c8003"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "region_share = pd.crosstab(df[\"region\"], df[\"iscustomer\"], normalize=\"columns\")\n",
+        "region_share.columns = [\"Non-customer share\", \"Customer share\"]\n",
+        "(region_share * 100).round(1)"
+      ],
+      "id": "f9e1ac0c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "region_counts = pd.crosstab(df[\"region\"], df[\"iscustomer\"], normalize=\"columns\")\n",
+        "region_counts.columns = [\"Non-customers\", \"Customers\"]\n",
+        "region_counts.plot(kind=\"bar\", figsize=(10, 5))\n",
+        "plt.title(\"Regional Composition by Customer Status\")\n",
+        "plt.ylabel(\"Share within group\")\n",
+        "plt.xlabel(\"\")\n",
+        "plt.legend(title=\"\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "ba97659a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Region differs sharply by customer status. Blueprinty customers are heavily concentrated in the Northeast, while non-customers are much more spread out across the five regions. That matters because if innovative firms cluster geographically, a simple customer-versus-non-customer comparison will partially confound customer status with regional business conditions.\n",
+        "\n",
+        "### Firm age by customer status"
+      ],
+      "id": "a6b0787e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "age_table = df.groupby(\"iscustomer\")[\"age\"].agg([\"mean\", \"median\", \"std\", \"min\", \"max\"])\n",
+        "age_table.index = [\"Non-customer\", \"Customer\"]\n",
+        "age_table.round(2)"
+      ],
+      "id": "68f0017a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True, sharey=True)\n",
+        "age_bins = np.arange(df[\"age\"].min(), df[\"age\"].max() + 2, 2)\n",
+        "\n",
+        "for ax, status, title in zip(axes, [0, 1], [\"Non-customers\", \"Customers\"]):\n",
+        "    subset = df.loc[df[\"iscustomer\"] == status, \"age\"]\n",
+        "    ax.hist(subset, bins=age_bins, edgecolor=\"white\")\n",
+        "    ax.set_title(title)\n",
+        "    ax.set_xlabel(\"Firm age (years)\")\n",
+        "    ax.set_ylabel(\"Number of firms\")\n",
+        "\n",
+        "fig.suptitle(\"Firm Age by Blueprinty Customer Status\", y=1.04)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "a90c6a18",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The age distributions are broadly similar, but customers are slightly older on average. That also matters because older firms may have had more time to accumulate organizational know-how, R&D capability, and legal experience with the patent process. Taken together, the region and age comparisons show why this is a non-trivial observational problem: the two groups are not exchangeable, so we need a model that conditions on observable differences.\n",
+        "\n",
+        "## A Simple Poisson Model via Maximum Likelihood\n",
+        "\n",
+        "The number of patents is a count, so a Poisson model is a natural starting point. Patent counts cannot be negative, they take integer values, and the histogram shows a right-skewed distribution rather than something approximately Normal. A Poisson model respects those features of the data.\n",
+        "\n",
+        "Suppose for the moment that every firm shares the same patent rate $\\lambda$ and that\n",
+        "\n",
+        "$$\n",
+        "Y_i \\sim \\text{Poisson}(\\lambda), \\qquad i = 1,\\dots,n.\n",
+        "$$\n",
+        "\n",
+        "For one observation, the probability mass function is\n",
+        "\n",
+        "$$\n",
+        "f(Y_i \\mid \\lambda) = \\frac{e^{-\\lambda} \\lambda^{Y_i}}{Y_i!}.\n",
+        "$$\n",
+        "\n",
+        "Assuming the observations are iid, the joint likelihood is\n",
+        "\n",
+        "$$\n",
+        "L(\\lambda \\mid Y_1,\\dots,Y_n)\n",
+        "= \\prod_{i=1}^n \\frac{e^{-\\lambda} \\lambda^{Y_i}}{Y_i!}.\n",
+        "$$\n",
+        "\n",
+        "We can rewrite this as\n",
+        "\n",
+        "$$\n",
+        "L(\\lambda \\mid Y)\n",
+        "= e^{-n\\lambda} \\lambda^{\\sum_i Y_i} \\prod_{i=1}^n \\frac{1}{Y_i!}.\n",
+        "$$\n",
+        "\n",
+        "Taking logs gives the log-likelihood:\n",
+        "\n",
+        "$$\n",
+        "\\ell(\\lambda \\mid Y)\n",
+        "= \\sum_{i=1}^n \\left(-\\lambda + Y_i \\log \\lambda - \\log(Y_i!)\\right).\n",
+        "$$\n",
+        "\n",
+        "The final term does not depend on $\\lambda$, so the shape of the objective is driven by the tradeoff between the $-\\lambda$ and $Y_i \\log \\lambda$ terms.\n",
+        "\n",
+        "### Coding the log-likelihood"
+      ],
+      "id": "cf491983"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def poisson_loglikelihood(lambda_, Y):\n",
+        "    lambda_ = float(lambda_)\n",
+        "    if lambda_ <= 0:\n",
+        "        return -np.inf\n",
+        "    return np.sum(-lambda_ + Y * np.log(lambda_) - gammaln(Y + 1))\n",
+        "\n",
+        "Y = df[\"patents\"].to_numpy()\n",
+        "poisson_loglikelihood(3.5, Y)"
+      ],
+      "id": "f8579e02",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Plotting the log-likelihood"
+      ],
+      "id": "caa4f751"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "lambda_grid = np.linspace(0.5, 7.5, 300)\n",
+        "ll_values = np.array([poisson_loglikelihood(lam, Y) for lam in lambda_grid])"
+      ],
+      "id": "8f9fa26a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plt.figure(figsize=(8, 5))\n",
+        "plt.plot(lambda_grid, ll_values, linewidth=2)\n",
+        "plt.axvline(Y.mean(), linestyle=\"--\", linewidth=2)\n",
+        "plt.title(\"Poisson Log-Likelihood for a Common Patent Rate\")\n",
+        "plt.xlabel(r\"$\\lambda$\")\n",
+        "plt.ylabel(\"Log-likelihood\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "e21bbf9e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The peak of the curve identifies the maximum likelihood estimate. Visually, the log-likelihood reaches its highest point very close to the sample mean of the patent counts. That is exactly what the algebra predicts.\n",
+        "\n",
+        "If we differentiate the log-likelihood and set it equal to zero,\n",
+        "\n",
+        "$$\n",
+        "\\frac{\\partial \\ell(\\lambda)}{\\partial \\lambda}\n",
+        "= \\sum_{i=1}^n \\left(-1 + \\frac{Y_i}{\\lambda}\\right)\n",
+        "= -n + \\frac{\\sum_i Y_i}{\\lambda} = 0,\n",
+        "$$\n",
+        "\n",
+        "which implies\n",
+        "\n",
+        "$$\n",
+        "\\hat\\lambda_{\\text{MLE}} = \\frac{1}{n} \\sum_{i=1}^n Y_i = \\bar Y.\n",
+        "$$\n",
+        "\n",
+        "So for the simple Poisson model, the MLE is just the sample mean.\n",
+        "\n",
+        "### Finding the MLE numerically"
+      ],
+      "id": "67bb9edb"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def neg_poisson_loglikelihood(par, Y):\n",
+        "    return -poisson_loglikelihood(par[0], Y)\n",
+        "\n",
+        "simple_opt = minimize(\n",
+        "    neg_poisson_loglikelihood,\n",
+        "    x0=np.array([Y.mean()]),\n",
+        "    args=(Y,),\n",
+        "    bounds=[(1e-8, None)]\n",
+        ")\n",
+        "\n",
+        "simple_mle = simple_opt.x[0]\n",
+        "simple_mean = Y.mean()\n",
+        "\n",
+        "pd.DataFrame({\n",
+        "    \"Quantity\": [\"Numerical MLE\", \"Sample mean\"],\n",
+        "    \"Value\": [simple_mle, simple_mean]\n",
+        "}).round(6)"
+      ],
+      "id": "aca123e5",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The numerical optimizer and the sample mean agree almost exactly. That is reassuring because it shows the code, the plot, and the algebra are all pointing to the same answer.\n",
+        "\n",
+        "## Poisson Regression\n",
+        "\n",
+        "The simple Poisson model assumes every firm has the same patent rate $\\lambda$, which is clearly too restrictive. A more realistic model lets the expected patent count vary with firm characteristics:\n",
+        "\n",
+        "$$\n",
+        "Y_i \\sim \\text{Poisson}(\\lambda_i), \\qquad \\lambda_i = \\exp(X_i'\\beta).\n",
+        "$$\n",
+        "\n",
+        "This is a Poisson regression. The linear index $X_i'\\beta$ can take any real value, but $\\lambda_i$ must be strictly positive, so we map the linear predictor through the exponential function. That keeps predicted patent rates on the positive real line.\n",
+        "\n",
+        "Here I model each firm's patent rate as a function of:\n",
+        "\n",
+        "- an intercept,\n",
+        "- firm age,\n",
+        "- age squared,\n",
+        "- region indicators (dropping one region as the baseline), and\n",
+        "- Blueprinty customer status.\n",
+        "\n",
+        "I include age squared because the relationship between firm maturity and patenting is unlikely to be exactly linear. I drop one region because including indicators for all regions together with an intercept would create perfect multicollinearity.\n",
+        "\n",
+        "### Coding the Poisson regression log-likelihood"
+      ],
+      "id": "5a1c3376"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df[\"age_sq\"] = df[\"age\"] ** 2\n",
+        "region_dummies = pd.get_dummies(df[\"region\"], drop_first=True)\n",
+        "X = pd.concat([\n",
+        "    pd.Series(1.0, index=df.index, name=\"Intercept\"),\n",
+        "    df[[\"age\", \"age_sq\", \"iscustomer\"]],\n",
+        "    region_dummies\n",
+        "], axis=1)\n",
+        "X = X.astype(float)\n",
+        "Y = df[\"patents\"].to_numpy().astype(float)\n",
+        "X_mat = X.to_numpy()\n",
+        "\n",
+        "\n",
+        "def poisson_regression_loglikelihood(beta, Y, X):\n",
+        "    eta = X @ beta\n",
+        "    mu = np.exp(eta)\n",
+        "    return np.sum(Y * eta - mu - gammaln(Y + 1))\n",
+        "\n",
+        "\n",
+        "def neg_poisson_regression_loglikelihood(beta, Y, X):\n",
+        "    return -poisson_regression_loglikelihood(beta, Y, X)\n",
+        "\n",
+        "poisson_regression_loglikelihood(np.zeros(X_mat.shape[1]), Y, X_mat)"
+      ],
+      "id": "2899eb3a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Estimating the model by MLE with `scipy.optimize`"
+      ],
+      "id": "e4237c47"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "beta0 = np.zeros(X_mat.shape[1])\n",
+        "opt = minimize(\n",
+        "    neg_poisson_regression_loglikelihood,\n",
+        "    x0=beta0,\n",
+        "    args=(Y, X_mat),\n",
+        "    method=\"BFGS\"\n",
+        ")\n",
+        "\n",
+        "beta_hat = opt.x\n",
+        "hessian_inv = opt.hess_inv\n",
+        "se_hat = np.sqrt(np.diag(hessian_inv))\n",
+        "\n",
+        "mle_table = pd.DataFrame({\n",
+        "    \"Variable\": X.columns,\n",
+        "    \"Estimate (MLE)\": beta_hat,\n",
+        "    \"Std. Error (MLE)\": se_hat\n",
+        "})\n",
+        "mle_table.round(4)"
+      ],
+      "id": "03cb0f67",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Checking against `statsmodels` GLM"
+      ],
+      "id": "a2a0e15b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "glm_fit = smf.glm(\n",
+        "    \"patents ~ age + I(age**2) + C(region) + iscustomer\",\n",
+        "    data=df,\n",
+        "    family=sm.families.Poisson()\n",
+        ").fit()\n",
+        "\n",
+        "check_table = pd.DataFrame({\n",
+        "    \"Variable\": glm_fit.params.index,\n",
+        "    \"Estimate (MLE)\": beta_hat,\n",
+        "    \"Estimate (GLM)\": glm_fit.params.values,\n",
+        "    \"SE (MLE)\": se_hat,\n",
+        "    \"SE (GLM)\": glm_fit.bse.values\n",
+        "})\n",
+        "check_table.round(4)"
+      ],
+      "id": "1ea7cf8d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The coefficient estimates from the hand-coded MLE and `statsmodels` match very closely, as they should. The standard errors are also close, though not always identical to the last decimal place. That is normal: the `GLM` routine uses its own optimization and information-matrix calculations, while my manual implementation relies on the numerical Hessian approximation returned by BFGS.\n",
+        "\n",
+        "### Interpreting the coefficients"
+      ],
+      "id": "72f7dee1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "interpret_table = pd.DataFrame({\n",
+        "    \"Variable\": glm_fit.params.index,\n",
+        "    \"Coefficient\": glm_fit.params.values,\n",
+        "    \"Std. Error\": glm_fit.bse.values,\n",
+        "    \"Incidence-rate ratio\": np.exp(glm_fit.params.values)\n",
+        "})\n",
+        "interpret_table.round(4)"
+      ],
+      "id": "dc362bda",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Several patterns stand out.\n",
+        "\n",
+        "First, the coefficient on `age` is positive while the coefficient on `age^2` is negative. That combination implies an inverted-U relationship: patenting tends to rise with age at first, but the marginal effect gradually declines as firms become older. That makes economic sense. Younger firms may still be building technical and legal capability, while very mature firms may already be past their most innovative phase.\n",
+        "\n",
+        "Second, the regional coefficients are relatively modest once age and customer status are included. In this sample, region matters less than firm maturity and customer status.\n",
+        "\n",
+        "Third, the customer coefficient is positive and statistically precise. The estimate is about 0.208, so holding age and region fixed, Blueprinty customers have an expected patent rate that is multiplied by $e^{0.208} \\approx 1.23$. In other words, the model associates customer status with roughly 23% more patents on average, conditional on the included controls.\n",
+        "\n",
+        "## The Effect of Blueprinty's Software\n",
+        "\n",
+        "In a Poisson model, coefficients are multiplicative, not additive, so the customer coefficient is not directly interpreted as “0.208 additional patents.” A more intuitive quantity comes from counterfactual prediction.\n",
+        "\n",
+        "I construct two versions of the covariate matrix:\n",
+        "\n",
+        "1. $X_0$: everyone is set to `iscustomer = 0`\n",
+        "2. $X_1$: everyone is set to `iscustomer = 1`\n",
+        "\n",
+        "Then I predict the expected patent count for each firm under both scenarios and average the difference."
+      ],
+      "id": "17881ee6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df0 = df.copy()\n",
+        "df1 = df.copy()\n",
+        "df0[\"iscustomer\"] = 0\n",
+        "df1[\"iscustomer\"] = 1\n",
+        "\n",
+        "yhat0 = glm_fit.predict(df0)\n",
+        "yhat1 = glm_fit.predict(df1)\n",
+        "\n",
+        "effect_table = pd.DataFrame({\n",
+        "    \"Quantity\": [\n",
+        "        \"Average predicted patents if all firms were non-customers\",\n",
+        "        \"Average predicted patents if all firms were customers\",\n",
+        "        \"Average treatment-effect style contrast\"\n",
+        "    ],\n",
+        "    \"Value\": [\n",
+        "        yhat0.mean(),\n",
+        "        yhat1.mean(),\n",
+        "        (yhat1 - yhat0).mean()\n",
+        "    ]\n",
+        "})\n",
+        "effect_table.round(4)"
+      ],
+      "id": "de3af337",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "plt.figure(figsize=(8, 5))\n",
+        "plt.hist(yhat1 - yhat0, bins=30, edgecolor=\"white\")\n",
+        "plt.axvline((yhat1 - yhat0).mean(), linestyle=\"--\", linewidth=2)\n",
+        "plt.title(\"Distribution of Predicted Customer Effects Across Firms\")\n",
+        "plt.xlabel(\"Predicted patents under customer status 1 minus 0\")\n",
+        "plt.ylabel(\"Number of firms\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "dc90b2b3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The average contrast is about 0.79 patents over five years. Interpreted carefully, that means the fitted model predicts that if the observed firms were all treated as Blueprinty customers rather than all treated as non-customers—while keeping their ages and regions fixed at their observed values—the average expected patent count would be about 0.79 higher.\n",
+        "\n",
+        "That is evidence consistent with Blueprinty's marketing claim. At the same time, the conclusion should be stated carefully. This is an observational study, not a randomized experiment. Even after controlling for age and region, there may still be unobserved differences between customers and non-customers—such as R&D spending, managerial quality, or legal sophistication—that also affect patenting. So the model supports an association, and perhaps a useful predictive story, but it does not by itself establish a clean causal effect.\n",
+        "\n",
+        "## Conclusion\n",
+        "\n",
+        "This assignment illustrates both the mechanics of maximum likelihood estimation and the practical value of Poisson regression for count data. Starting from the simple Poisson model, the likelihood function makes it clear why the MLE for a common patent rate is just the sample mean. Extending that logic to a regression setting lets expected patent counts vary with firm characteristics in a way that respects the non-negative, integer-valued nature of the data.\n",
+        "\n",
+        "Substantively, the analysis suggests that Blueprinty customers tend to have higher patent counts than non-customers, even after conditioning on age and region. The fitted Poisson model implies a sizable positive association: customers have roughly 23% higher expected patent rates, and the average counterfactual contrast is about 0.79 additional patents over five years.\n",
+        "\n",
+        "For Blueprinty's marketing team, that result is encouraging. For a careful analyst, however, the right conclusion is more restrained: the data are certainly consistent with the claim that Blueprinty's customers are more successful, but because customer status is not randomly assigned, the analysis cannot rule out omitted-variable bias. The model provides useful evidence, not definitive proof."
+      ],
+      "id": "74382f54"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3",
+      "path": "/Users/nancyfang/opt/anaconda3/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

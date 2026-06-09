@@ -1,0 +1,27 @@
+---
+title: "About"
+---
+
+## Background
+
+I am currently pursuing a Master in Business Analytics at the University of California San Diego. Before UC San Diego, I studied Finance at Shanghai Jiao Tong University and completed a minor in Business Data Science.
+
+My academic background has given me training in business analytics, machine learning, optimization, finance, and data analysis. I am especially interested in applying analytical methods to real business problems.
+
+## Professional Interests
+
+I am interested in marketing analytics, experimentation, market research, and data-driven decision making. Through previous internships, I have worked on projects involving financial analysis, market analysis, reporting, data reconciliation, and industry research.
+
+## Technical Skills
+
+- Python
+- SQL
+- Excel / MS Office
+- NumPy
+- Pandas
+- SciPy
+- Matplotlib
+
+## Current Work
+
+This website is a place to organize my coursework, projects, and analytical writing for MGTA 495 and related work.

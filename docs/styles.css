@@ -1,0 +1,40 @@
+body {
+  font-size: 18px;
+}
+
+main.content {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin-top: 1.2rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #dddddd;
+  font-weight: 700;
+}
+
+h3 {
+  margin-top: 1.2rem;
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+}
+
+.navbar-brand {
+  font-weight: 700;
+}
+
+ul {
+  margin-bottom: 1rem;
+}
+
+h1.title {
+  display: none;
+}

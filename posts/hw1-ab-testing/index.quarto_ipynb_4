@@ -1,0 +1,426 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"HW1: A/B Testing and Simulating Key Ideas in Frequentist Statistical Inference\"\n",
+        "date: 2026-04-15\n",
+        "categories: [Homework, A/B Testing, Statistics]\n",
+        "jupyter: python3\n",
+        "format:\n",
+        "  html:\n",
+        "    toc: true\n",
+        "---\n",
+        "\n",
+        "## Introduction\n",
+        "\n",
+        "A/B testing is one of the most common ways to evaluate whether a change in website design or copy improves user behavior. In this post, I use a simulated A/B test to study several core ideas in frequentist statistical inference.\n",
+        "\n",
+        "The setting is a homepage call-to-action for a newsletter signup. Visitors are randomly assigned to see one of two messages, and each visitor either signs up or does not sign up. This creates a simple but useful example for understanding estimation, uncertainty, hypothesis testing, regression, and the danger of repeatedly checking results before data collection is complete.\n",
+        "\n",
+        "## The A/B Test as a Statistical Problem\n",
+        "\n",
+        "Let `X_Ai` denote the outcome for user `i` in group A and `X_Bi` denote the outcome for user `i` in group B, where each outcome equals 1 if the user signs up and 0 otherwise. Then each observation can be modeled as a Bernoulli random variable with success probabilities `pi_A` and `pi_B`.\n",
+        "\n",
+        "The quantity of interest is the difference in signup rates:\n",
+        "\n",
+        "`theta = pi_A - pi_B`\n",
+        "\n",
+        "A natural estimator is the difference in sample means:\n",
+        "\n",
+        "`theta_hat = Xbar_A - Xbar_B`\n",
+        "\n",
+        "If `theta_hat > 0`, version A appears to outperform version B in the sample. However, because the data are random, the observed difference will vary from one experiment to another. The rest of this post explores how frequentist tools help us reason about that variability.\n",
+        "\n",
+        "## Simulating Data\n",
+        "\n",
+        "To make the analysis concrete, I simulate data from an experiment in which the true signup probability is 0.22 for version A and 0.18 for version B. This implies a true treatment effect of 0.04.\n",
+        "\n",
+        "I generate 1,000 observations in each group."
+      ],
+      "id": "7cb99f96"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "from scipy.stats import norm\n",
+        "import statsmodels.api as sm\n",
+        "\n",
+        "np.random.seed(495)\n",
+        "\n",
+        "pi_A = 0.22\n",
+        "pi_B = 0.18\n",
+        "n = 1000\n",
+        "\n",
+        "A = np.random.binomial(1, pi_A, n)\n",
+        "B = np.random.binomial(1, pi_B, n)\n",
+        "\n",
+        "theta_true = pi_A - pi_B\n",
+        "theta_hat = A.mean() - B.mean()\n",
+        "\n",
+        "summary_table = pd.DataFrame({\n",
+        "    \"Group\": [\"A\", \"B\"],\n",
+        "    \"True signup rate\": [pi_A, pi_B],\n",
+        "    \"Observed signup rate\": [A.mean(), B.mean()]\n",
+        "})\n",
+        "\n",
+        "summary_table"
+      ],
+      "id": "597978ef",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The observed difference in sample means is shown below."
+      ],
+      "id": "bf1dd714"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "theta_hat"
+      ],
+      "id": "f88b1d37",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Even though the true treatment effect is 0.04, the realized estimate will generally not equal 0.04 exactly. This is the basic motivation for statistical inference: sample estimates fluctuate, even when the underlying data-generating process is fixed.\n",
+        "\n",
+        "## The Law of Large Numbers\n",
+        "\n",
+        "The law of large numbers says that sample averages tend to get closer to their expected values as the sample size increases. In this context, that means the running estimate of the difference in means should gradually stabilize near the true effect.\n",
+        "\n",
+        "To illustrate this, I compute the cumulative average of the observation-level differences `A_i - B_i` as the sample grows."
+      ],
+      "id": "5928799f"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "diffs = A - B\n",
+        "running_mean = np.cumsum(diffs) / np.arange(1, n + 1)\n",
+        "\n",
+        "running_df = pd.DataFrame({\n",
+        "    \"n\": np.arange(1, n + 1),\n",
+        "    \"running_mean\": running_mean\n",
+        "})\n",
+        "\n",
+        "running_df.head()"
+      ],
+      "id": "aaf80a16",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "\n",
+        "plt.figure(figsize=(8, 5))\n",
+        "plt.plot(running_df[\"n\"], running_df[\"running_mean\"], linewidth=2)\n",
+        "plt.axhline(theta_true, linestyle=\"--\", linewidth=2)\n",
+        "plt.xlabel(\"Number of paired observations\")\n",
+        "plt.ylabel(\"Cumulative average of A - B\")\n",
+        "plt.title(\"Law of Large Numbers for the Difference in Means\")\n",
+        "plt.show()"
+      ],
+      "id": "0e7832d8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "At small sample sizes, the running average moves around quite a bit. As the sample grows, the estimate becomes more stable and moves closer to the true value of 0.04. This is exactly what the law of large numbers predicts.\n",
+        "\n",
+        "## Bootstrap Standard Errors\n",
+        "\n",
+        "A point estimate alone is not enough; we also want to know how uncertain that estimate is. One way to quantify uncertainty is with a standard error. In this section, I estimate the standard error of `theta_hat` using the bootstrap.\n",
+        "\n",
+        "The bootstrap repeatedly resamples the observed data with replacement, recomputes the estimator in each resample, and uses the variability across bootstrap replications as an estimate of sampling uncertainty."
+      ],
+      "id": "7c57f89e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "B_boot = 1000\n",
+        "boot_estimates = []\n",
+        "\n",
+        "for _ in range(B_boot):\n",
+        "    A_star = np.random.choice(A, size=n, replace=True)\n",
+        "    B_star = np.random.choice(B, size=n, replace=True)\n",
+        "    boot_estimates.append(A_star.mean() - B_star.mean())\n",
+        "\n",
+        "boot_estimates = np.array(boot_estimates)\n",
+        "boot_se = boot_estimates.std(ddof=1)\n",
+        "\n",
+        "pA_hat = A.mean()\n",
+        "pB_hat = B.mean()\n",
+        "\n",
+        "analytic_se = np.sqrt(\n",
+        "    pA_hat * (1 - pA_hat) / n +\n",
+        "    pB_hat * (1 - pB_hat) / n\n",
+        ")\n",
+        "\n",
+        "ci_lower = theta_hat - 1.96 * boot_se\n",
+        "ci_upper = theta_hat + 1.96 * boot_se\n",
+        "\n",
+        "se_table = pd.DataFrame({\n",
+        "    \"Quantity\": [\"Point estimate\", \"Bootstrap SE\", \"Analytical SE\", \"95% CI lower\", \"95% CI upper\"],\n",
+        "    \"Value\": [theta_hat, boot_se, analytic_se, ci_lower, ci_upper]\n",
+        "})\n",
+        "\n",
+        "se_table"
+      ],
+      "id": "501e05c6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "\n",
+        "plt.figure(figsize=(8, 5))\n",
+        "plt.hist(boot_estimates, bins=30, edgecolor=\"black\")\n",
+        "plt.axvline(theta_hat, linestyle=\"--\", linewidth=2)\n",
+        "plt.xlabel(\"Bootstrap estimate\")\n",
+        "plt.ylabel(\"Frequency\")\n",
+        "plt.title(\"Bootstrap Distribution of the Difference in Means\")\n",
+        "plt.show()"
+      ],
+      "id": "f399c255",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The bootstrap standard error is very close to the analytical standard error. That is reassuring: both approaches suggest a similar level of uncertainty around the observed treatment effect. Using the bootstrap standard error, the approximate 95% confidence interval is reported above.\n",
+        "\n",
+        "## The Central Limit Theorem\n",
+        "\n",
+        "The central limit theorem helps explain why many estimators have approximately normal sampling distributions when the sample size is large. To study this idea, I repeatedly simulate the estimator `theta_hat` under different sample sizes."
+      ],
+      "id": "61b8e354"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def simulate_theta_hat(n, pi_A=0.22, pi_B=0.18, reps=1000):\n",
+        "    vals = []\n",
+        "    for _ in range(reps):\n",
+        "        A_sim = np.random.binomial(1, pi_A, n)\n",
+        "        B_sim = np.random.binomial(1, pi_B, n)\n",
+        "        vals.append(A_sim.mean() - B_sim.mean())\n",
+        "    return np.array(vals)\n",
+        "\n",
+        "sample_sizes = [25, 50, 100, 500]\n",
+        "simulated_results = {n_i: simulate_theta_hat(n_i) for n_i in sample_sizes}"
+      ],
+      "id": "c21b9c42",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: false\n",
+        "\n",
+        "fig, axes = plt.subplots(2, 2, figsize=(10, 8))\n",
+        "\n",
+        "for ax, n_i in zip(axes.ravel(), sample_sizes):\n",
+        "    vals = simulated_results[n_i]\n",
+        "    ax.hist(vals, bins=30, edgecolor=\"black\")\n",
+        "    ax.axvline(theta_true, linestyle=\"--\", linewidth=2)\n",
+        "    ax.set_title(f\"n = {n_i}\")\n",
+        "    ax.set_xlabel(\"Estimated treatment effect\")\n",
+        "    ax.set_ylabel(\"Frequency\")\n",
+        "\n",
+        "fig.suptitle(\"Sampling Distribution of the Estimator Under Different Sample Sizes\", fontsize=14)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "b0cee0f3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "With small sample sizes, the distribution of the estimator is rougher and more dispersed. As the sample size increases, the distribution becomes more concentrated and more bell-shaped. This is the central limit theorem at work.\n",
+        "\n",
+        "## Hypothesis Testing\n",
+        "\n",
+        "A common question in A/B testing is whether the observed difference is large enough to reject the null hypothesis of no treatment effect.\n",
+        "\n",
+        "Here I test the null hypothesis that the treatment effect equals zero against the alternative that it is not zero, using a z-statistic based on the analytical standard error."
+      ],
+      "id": "28dfa173"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "z_stat = theta_hat / analytic_se\n",
+        "p_value = 2 * (1 - norm.cdf(abs(z_stat)))\n",
+        "\n",
+        "test_table = pd.DataFrame({\n",
+        "    \"Statistic\": [\"Estimate\", \"Std. Error\", \"z-statistic\", \"p-value\"],\n",
+        "    \"Value\": [theta_hat, analytic_se, z_stat, p_value]\n",
+        "})\n",
+        "\n",
+        "test_table"
+      ],
+      "id": "060e28de",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The p-value measures how surprising the observed estimate would be if the true treatment effect were actually zero. A small p-value provides evidence against the null hypothesis. In this simulation, the p-value is low enough to suggest that the difference between the two versions is unlikely to be explained by random variation alone.\n",
+        "\n",
+        "## The T-Test as a Regression\n",
+        "\n",
+        "A difference-in-means test can also be written as a regression. Define an outcome variable `Y` equal to signup status and a treatment indicator `D` equal to 1 for group A and 0 for group B. Then consider the linear model:\n",
+        "\n",
+        "`Y = beta_0 + beta_1 D + u`\n",
+        "\n",
+        "In this setup, `beta_0` is the mean outcome in group B, and `beta_1` is the difference in means between groups A and B. That means `beta_1` estimates the same quantity as `theta_hat`."
+      ],
+      "id": "e9f899a9"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = pd.DataFrame({\n",
+        "    \"Y\": np.concatenate([A, B]),\n",
+        "    \"D\": np.concatenate([np.ones(n), np.zeros(n)])\n",
+        "})\n",
+        "\n",
+        "X = sm.add_constant(df[\"D\"])\n",
+        "model = sm.OLS(df[\"Y\"], X).fit()\n",
+        "\n",
+        "reg_table = pd.DataFrame({\n",
+        "    \"Coefficient\": [\"Intercept\", \"Treatment indicator\"],\n",
+        "    \"Estimate\": [model.params[\"const\"], model.params[\"D\"]],\n",
+        "    \"Std. Error\": [model.bse[\"const\"], model.bse[\"D\"]],\n",
+        "    \"t-stat\": [model.tvalues[\"const\"], model.tvalues[\"D\"]],\n",
+        "    \"p-value\": [model.pvalues[\"const\"], model.pvalues[\"D\"]]\n",
+        "})\n",
+        "\n",
+        "reg_table"
+      ],
+      "id": "7feda9e8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The coefficient on the treatment indicator is the estimated effect of version A relative to version B. As expected, this regression coefficient is the same difference in sample means studied earlier. This provides a useful bridge between classical A/B testing and regression-based analysis.\n",
+        "\n",
+        "## The Problem with Peeking\n",
+        "\n",
+        "One of the most important practical issues in experimentation is peeking, or repeatedly checking significance during data collection and stopping early when the result looks favorable. This can inflate the false positive rate.\n",
+        "\n",
+        "To demonstrate this, I simulate experiments under the null hypothesis, where both versions have the same true signup rate of 0.20. In each experiment, I check significance after every additional 100 observations per group, up to 1,000 observations. If the p-value falls below 0.05 at any checkpoint, I count that experiment as a false positive."
+      ],
+      "id": "fb12dca1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def peeking_experiment(pi=0.20, total_n=1000, step=100):\n",
+        "    A_null = np.random.binomial(1, pi, total_n)\n",
+        "    B_null = np.random.binomial(1, pi, total_n)\n",
+        "\n",
+        "    for n_i in range(step, total_n + 1, step):\n",
+        "        A_sub = A_null[:n_i]\n",
+        "        B_sub = B_null[:n_i]\n",
+        "\n",
+        "        theta_hat_i = A_sub.mean() - B_sub.mean()\n",
+        "\n",
+        "        se_i = np.sqrt(\n",
+        "            A_sub.mean() * (1 - A_sub.mean()) / n_i +\n",
+        "            B_sub.mean() * (1 - B_sub.mean()) / n_i\n",
+        "        )\n",
+        "\n",
+        "        if se_i == 0:\n",
+        "            continue\n",
+        "\n",
+        "        z_i = theta_hat_i / se_i\n",
+        "        p_i = 2 * (1 - norm.cdf(abs(z_i)))\n",
+        "\n",
+        "        if p_i < 0.05:\n",
+        "            return 1\n",
+        "\n",
+        "    return 0\n",
+        "\n",
+        "np.random.seed(495)\n",
+        "peeking_results = np.array([peeking_experiment() for _ in range(10000)])\n",
+        "false_positive_rate = peeking_results.mean()\n",
+        "\n",
+        "false_positive_rate"
+      ],
+      "id": "567efac0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Under proper single-shot testing at the 5% significance level, the false positive rate should be close to 0.05. However, when repeatedly checking results and stopping whenever significance appears, the probability of a false rejection becomes noticeably larger. This demonstrates why peeking is problematic in practice.\n",
+        "\n",
+        "## Conclusion\n",
+        "\n",
+        "This simulated A/B test provides a compact illustration of several core ideas in frequentist inference. The law of large numbers explains why estimates stabilize with more data, the bootstrap and analytical formulas quantify uncertainty, and the central limit theorem helps justify normal approximations for large samples.\n",
+        "\n",
+        "The same A/B test can also be understood through hypothesis testing and regression, showing how these tools are closely connected. Finally, the peeking simulation highlights an important practical warning: even when there is truly no treatment effect, repeated checking can produce misleadingly significant results.\n",
+        "\n",
+        "Overall, frequentist methods provide a useful framework for analyzing A/B tests, but they must be applied carefully and interpreted with attention to uncertainty, sample size, and experimental design."
+      ],
+      "id": "f5d26e7d"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3",
+      "path": "/Users/nancyfang/opt/anaconda3/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
